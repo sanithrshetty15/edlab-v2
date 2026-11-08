@@ -26,16 +26,16 @@ production:
     <<: *default
     schema_search_path: solid_cache
     migrations_paths: db/cache_migrate
-    schema_dump: db/cache_schema.rb
+    schema_dump: cache_schema.rb
 
   queue:
     <<: *default
     schema_search_path: solid_queue
     migrations_paths: db/queue_migrate
-    schema_dump: db/queue_schema.rb
+    schema_dump: queue_schema.rb
 
   cable:
     <<: *default
     schema_search_path: solid_cable
     migrations_paths: db/cable_migrate
-    schema_dump: db/cable_schema.rb
+    schema_dump: cable_schema.rb
