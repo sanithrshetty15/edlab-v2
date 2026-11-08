@@ -1,0 +1,6 @@
+export { default as Hero } from './Hero'
+export { default as About } from './About'
+export { default as Linux } from './Linux'
+export { default as Testimonials } from './Testimonials'
+export { default as Download } from './Download'
+export { default as Footer } from './Footer'

@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  --color-maze-lime: #c5ff41;
+  --color-edwins-dark: #1c1c1c;
+  --color-edwins-neutral: #f4f5f0;
+  --color-edwins-paper: #fbfcf8;
+
+  --font-orbitron: "Orbitron", sans-serif;
+  --font-poppins: "Poppins", sans-serif;
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 6.5rem;
+  -webkit-text-size-adjust: 100%;
+}
+
+html,
+body {
+  overflow-x: clip;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: var(--font-poppins);
+  background: var(--color-edwins-neutral);
+  color: var(--color-edwins-dark);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+::selection {
+  background: var(--color-maze-lime);
+  color: var(--color-edwins-dark);
+}
+
+#main:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-maze-lime);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 5px rgba(28, 28, 28, 0.18);
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

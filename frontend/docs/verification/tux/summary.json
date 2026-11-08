@@ -1,0 +1,110 @@
+{
+  "desktop": {
+    "modelReady": true,
+    "info": {
+      "hasCanvas": true,
+      "canvasBacking": [
+        512,
+        640
+      ],
+      "canvasCss": [
+        497,
+        621
+      ],
+      "glLost": false,
+      "artworkOverlay": false,
+      "artworkFallback": false,
+      "stageRect": {
+        "x": 800,
+        "y": 190,
+        "width": 497,
+        "height": 621
+      },
+      "docScrollWidth": 1440,
+      "docClientWidth": 1440
+    },
+    "logs": [
+      "warning: WebGL: CONTEXT_LOST_WEBGL: loseContext: context lost",
+      "warning: [.WebGL-0x2344000f3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "warning: [.WebGL-0x2344000f3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "warning: [.WebGL-0x2344000f3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+      "warning: [.WebGL-0x2344000f3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+    ]
+  },
+  "mobile": {
+    "modelReady": true,
+    "info": {
+      "hasCanvas": true,
+      "canvasBacking": [
+        273,
+        341
+      ],
+      "canvasCss": [
+        265,
+        331
+      ],
+      "glLost": false,
+      "artworkOverlay": false,
+      "artworkFallback": false,
+      "stageRect": {
+        "x": 63,
+        "y": 310,
+        "width": 265,
+        "height": 331
+      },
+      "docScrollWidth": 390,
+      "docClientWidth": 390
+    },
+    "logs": []
+  },
+  "reduced": {
+    "modelReady": true,
+    "info": {
+      "hasCanvas": true,
+      "canvasBacking": [
+        512,
+        640
+      ],
+      "canvasCss": [
+        512,
+        640
+      ],
+      "glLost": false,
+      "artworkOverlay": false,
+      "artworkFallback": false,
+      "stageRect": {
+        "x": 712,
+        "y": 148,
+        "width": 512,
+        "height": 640
+      },
+      "docScrollWidth": 1280,
+      "docClientWidth": 1280
+    },
+    "logs": []
+  },
+  "aborted": {
+    "modelReady": false,
+    "info": {
+      "hasCanvas": false,
+      "canvasBacking": null,
+      "canvasCss": null,
+      "glLost": null,
+      "artworkOverlay": false,
+      "artworkFallback": true,
+      "stageRect": {
+        "x": 720,
+        "y": 178,
+        "width": 497,
+        "height": 621
+      },
+      "docScrollWidth": 1280,
+      "docClientWidth": 1280
+    },
+    "logs": [
+      "requestfailed: http://127.0.0.1:4173/models/tux.glb net::ERR_FAILED",
+      "error: Failed to load resource: net::ERR_FAILED",
+      "error: [Tux3D] Failed to load /models/tux.glb TypeError: Failed to fetch\n    at ao.load (http://127.0.0.1:4173/assets/Tux3D-D8ndufos.js:5:28031)\n    at pu.load (http://127.0.0.1:4173/assets/Tux3D-D8ndufos.js:4225:58961)\n    at http://127.0.0.1:4173/assets/Tux3D-D8ndufos.js:4225:107605\n    at pl (http://127.0.0.1:4173/assets/index-bagoCp79.js:8:95120)\n    at Fu (http://127.0.0.1:4173/assets/index-bagoCp79.js:8:119787)\n    at Fu (http://127.0.0.1:4173/assets/index-bagoCp79.js:8:120035)\n    at Pu (http://127.0.0.1:4173/assets/index-bagoCp79.js:8:119319)\n    at Nu (http://127.0.0.1:4173/assets/index-bagoCp79.js:8:118168)\n    at Pu (http://127.0.0.1:4173/assets/index-bagoCp79.js:8:119138)\n    at Nu (http://127.0.0.1:4173/assets/index-bagoCp79.js:8:118168)"
+    ]
+  }
+}
