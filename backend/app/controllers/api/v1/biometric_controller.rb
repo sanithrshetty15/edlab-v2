@@ -1,8 +1,12 @@
+
 class Api::V1::BiometricController < Api::V1::BaseController
-  skip_before_action :authenticate_user!, only: [:authenticate_device, :submit_event, :sync_events]
-  before_action :authenticate_device!, only: [:enroll_fingerprint, :remove_enrollment, :device_status]
+  before_action :authenticate_device!,
+                only: [:enroll_fingerprint, :remove_enrollment, :device_status]
+
   before_action :authenticate_user!, only: [:device_status]
-  before_action :require_admin!, only: [:enroll_fingerprint, :remove_enrollment]
+
+  before_action :require_admin!,
+                only: [:enroll_fingerprint, :remove_enrollment]
 
   # POST /api/v1/biometric/authenticate-device
   def authenticate_device
@@ -16,7 +20,9 @@ class Api::V1::BiometricController < Api::V1::BaseController
       }, status: :unauthorized
     end
 
-    device = DeviceRegistration.find_by(api_key_digest: Digest::SHA256.hexdigest(api_key))
+    device = DeviceRegistration.find_by(
+      api_key_digest: Digest::SHA256.hexdigest(api_key)
+    )
 
     unless device
       return render json: {
@@ -68,6 +74,7 @@ class Api::V1::BiometricController < Api::V1::BaseController
     end
 
     member = Member.active.find_by(id: member_id)
+
     unless member
       return render json: {
         success: false,
@@ -203,7 +210,9 @@ class Api::V1::BiometricController < Api::V1::BaseController
     hmac_signature = params[:hmac_signature].to_s
     payload = params[:payload] || {}
 
-    unless device_registration_id.present? && event_type.present? && idempotency_key.present?
+    unless device_registration_id.present? &&
+           event_type.present? &&
+           idempotency_key.present?
       return render json: {
         success: false,
         message: "Device ID, event type, and idempotency key are required"
@@ -211,6 +220,7 @@ class Api::V1::BiometricController < Api::V1::BaseController
     end
 
     device = DeviceRegistration.find_by(id: device_registration_id)
+
     unless device
       return render json: {
         success: false,
@@ -225,7 +235,12 @@ class Api::V1::BiometricController < Api::V1::BaseController
       }, status: :forbidden
     end
 
-    unless %w[fingerprint_scan finger_mismatch enrollment_success enrollment_failure].include?(event_type)
+    unless %w[
+      fingerprint_scan
+      finger_mismatch
+      enrollment_success
+      enrollment_failure
+    ].include?(event_type)
       return render json: {
         success: false,
         message: "Invalid event type"
@@ -233,6 +248,7 @@ class Api::V1::BiometricController < Api::V1::BaseController
     end
 
     existing_event = DeviceEvent.find_by(idempotency_key: idempotency_key)
+
     if existing_event
       return render json: {
         success: true,
@@ -275,6 +291,7 @@ class Api::V1::BiometricController < Api::V1::BaseController
     end
 
     device = DeviceRegistration.find_by(id: device_registration_id)
+
     unless device
       return render json: {
         success: false,
@@ -282,7 +299,9 @@ class Api::V1::BiometricController < Api::V1::BaseController
       }, status: :not_found
     end
 
-    scope = DeviceEvent.where(device_registration_id: device_registration_id)
+    scope = DeviceEvent.where(
+      device_registration_id: device_registration_id
+    )
 
     if last_sync_timestamp.present?
       last_sync = Time.parse(last_sync_timestamp) rescue nil
@@ -330,7 +349,9 @@ class Api::V1::BiometricController < Api::V1::BaseController
 
   def require_admin!
     authenticate_user!
-    unless current_user.admin?
+    return if performed?
+
+    unless current_user&.admin?
       return render json: {
         success: false,
         message: "Administrator access required"
@@ -343,11 +364,12 @@ class Api::V1::BiometricController < Api::V1::BaseController
 
     begin
       parsed = Time.parse(timestamp_str)
+
       [
         parsed,
         Time.current - 5.minutes,
         Time.current + 5.minutes
-      ].max
+      ].sort[1]
     rescue ArgumentError
       Time.current
     end
