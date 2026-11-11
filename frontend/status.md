@@ -32,8 +32,12 @@
   GSAP ScrollTrigger reveals and respectful reduced-motion fallbacks.
 - Testimonials render the designed empty state because
   `labContent.testimonials.items` is empty; no fabricated quotes are shown.
-- Download CTAs are driven by `labContent.download`; empty URLs render honest
-  "in preparation" actions instead of fake links.
+- Download section is functional: real PWA install states driven by
+  `beforeinstallprompt`/`appinstalled`, Safari/iOS guidance, browser-menu
+  fallback, and a real signed APK release served from
+  `public/downloads/EdwinsLab-1.0.apk` with verified metadata in
+  `public/downloads/edwinslab-apk.json`. Inside the native Android app the
+  section shows an installed-app card driven by Capacitor `App.getInfo()`.
 - Core content/config is centralized in `src/content/labContent.js`.
 - Brand assets are wired from `frontend/figma assets/logo/` for favicon,
   navbar wordmark, footer mark and intro.
@@ -86,6 +90,33 @@ and verified:
 - **Lint/build**: `npm run lint` exit 0; `npm run build` exit 0, 73 modules
   transformed successfully.
 
+## PWA and Android installs
+
+- PWA: `public/manifest.webmanifest`, generated brand icons, `public/sw.js`
+  (app-shell cache `edwinslab-shell-v1`), registration and update banner.
+  Display is `standalone`; theme `#C5FF41`; background `#1C1C1C`.
+- Portal routing: `/login`, `/app` and `/app/*` lazily load `AppPortal`.
+  Explore, the intro and the other homepage sections are unchanged.
+- `/login` renders the real member/admin login UI. With the production API
+  returning 502, submitting credentials shows the real timeout error state.
+  Successful sign-in remains untested until the backend responds.
+- Android: Capacitor 7 project in `android/`; `com.edwinslab.app`, version
+  `1.0` (versionCode 1), minSdk 23, targetSdk 35. Branded launcher/adaptive
+  icons and splash; edge-to-edge margins with dark status bar icons on the
+  light neutral background; hardware back navigates in-app history, then exits.
+- Signed release APK: `public/downloads/EdwinsLab-1.0.apk`, 7,431,876 bytes,
+  SHA-256
+  `5244c5c4157081b4e19472320fe91da7419f1e0b0bfcafb1dd313fb06724a1d7`,
+  APK Signature Scheme v1/v2/v3 verified. Built with JDK 21 + Gradle 8.14.3
+  and signed with a keystore kept outside the repo at
+  `~/.config/edwinslab/edwinslab-release.jks` (password not stored in the
+  repo). `public/downloads` is stripped from the bundled Android assets so the
+  APK does not contain a copy of itself.
+- Deployment config: `vercel.json` adds SPA rewrites for `/explore`, `/login`,
+  `/app`, `/app/*` and asset headers, including the APK MIME type. Backend CORS
+  accepts the deployed origin plus `https://localhost` and
+  `capacitor://localhost`.
+
 ## Verification
 
 - Headless browser checks at 1440/1280/390/320: no horizontal overflow,
@@ -96,6 +127,37 @@ and verified:
   timing, offscreen hold confirmed on frame "03".
 - Footer: entrance progression measured across 12 frames, contours reach
   1.0 opacity at frame 12, wordmark reaches top position 7.8 px at frame 12.
+
+### Install verification (2026-11-10)
+
+Environment: Android 16 emulator (API 36) for Android checks, local production
+preview at `http://localhost:4173` over `adb reverse`, and desktop Chrome via
+Playwright. No physical-device testing was performed.
+
+- PWA, Chrome on Android emulator: the in-page Install App button fired the
+  real `beforeinstallprompt`, the native "Install app" dialog was confirmed,
+  and the installed WebAPK launched in `WebappActivity` with no URL bar.
+  The Download section then showed "Installed on this device"; closing and
+  relaunching from the home-screen icon restored the installed app.
+- PWA offline: service worker active with controller, app-shell cache
+  `edwinslab-shell-v1` present, and an offline reload rendered the shell,
+  including the Download section.
+- Portal `/login`: the page renders; client-side validation, the pending state,
+  and the real "request timed out" error state were verified while the backend
+  was down. Successful authentication is untested (backend returned 502).
+- APK on the same emulator: `adb install` succeeded; `com.edwinslab.app`
+  launched with the branded native splash and web intro; Android app info showed
+  Edwins Lab 1.0; the native Download card showed
+  "Android app installed · Version 1.0 (build 1) · com.edwinslab.app"; the back
+  button navigated in-app history and then exited the app.
+- APK via desktop Chrome: metadata parsed, `HEAD` returned 200 with
+  Content-Length 7,431,876, the download produced `EdwinsLab-1.0.apk` of the
+  same size, and the UI showed "APK download complete". The card footer reads
+  "Android 6.0+ · Signed release build".
+- iOS guidance: an iPhone user-agent context shows the Safari Add to Home
+  Screen instructions (emulation only).
+- `npm run lint` completes with 0 errors (one pre-existing hook warning);
+  `npm run build` succeeds.
 
 ## Known limitations
 
@@ -111,12 +173,31 @@ and verified:
   per-frame in production.
 - The supplied lab photos are AVIF data despite their `.jpg` filenames.
 - 8% projected-bounds padding at animation extremes.
+- Android verification used an API 36 emulator, not a physical phone/tablet;
+  iOS guidance was tested with a spoofed iPhone user agent inside Chromium.
+  Real iOS/Safari and physical-device installs remain unverified.
+- Production `https://edwinslab.vercel.app` still serves the initial commit;
+  the new routes, PWA assets and APK are not deployed. Vercel credentials were
+  unavailable in this environment.
+- The production API `https://edwinslab.onrender.com` returned 502, so real
+  sign-in, session handling and production CORS remain unverified.
+- Headless Chrome cannot install a PWA and reports only `in-incognito`; the
+  real install was verified separately in Android Chrome.
+- The public site has no visible link to `/login`; the portal is reachable only
+  by URL/deep link. Because installed PWA/APK windows have no address bar, an
+  entry point must be added before members can reach the portal from the
+  installed app.
 
 ## Open items
 
 - Add approved real member stories to `testimonials.items` to activate the
   marquee.
-- Publish real APK and PWA URLs in `labContent.js` when releases are approved.
+- Deploy the updated frontend (Vercel credentials required) and verify the
+  production manifest, service worker, portal rewrites and APK download.
+- Restore the backend and verify real sign-in, sessions and CORS from both the
+  website and the installed APK.
+- Back up `~/.config/edwinslab/edwinslab-release.jks` securely and use the same
+  key for updates; bump `versionCode`/`versionName` for each release.
 - Optional: real demo target for hero "Watch demo" CTA.
 - Confirm final gallery captions and crops with lab members, and add more
   approved photographs through `labGallery`.

@@ -106,25 +106,22 @@ export const testimonials = {
 
 export const downloads = {
   eyebrow: "04 / Download",
-  title: "Carry the lab with you.",
+  title: "Get Edwins Lab on your device.",
   intro:
-    "The Edwins Lab app is in preparation. Android APK and installable PWA releases will be published here once they are ready.",
+    "Install Edwins Lab for a more convenient experience. Access the lab community directly from your device.",
   android: {
-    title: "Android app",
-    description: "The Android build is being prepared for release.",
-    note: "APK download coming soon",
+    title: "Android APK",
+    description:
+      "Install the Android build directly on your phone or tablet. No app store required.",
   },
   pwa: {
-    title: "Installable web app",
+    title: "Install web app",
     description:
-      "Install the lab straight from your browser when the PWA build is approved.",
-    note: "Browser install coming soon",
+      "Install Edwins Lab straight from your browser. It opens in its own window and updates automatically.",
   },
   notifyLabel: "Get release updates",
   notifyHref:
     "mailto:edwinsoslab@gmail.com?subject=Edwins%20Lab%20app%20release%20updates",
-  apkUrl: null,
-  pwaUrl: null,
 };
 
 /*

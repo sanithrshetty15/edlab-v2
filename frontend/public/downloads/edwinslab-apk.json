@@ -1,0 +1,11 @@
+{
+  "name": "Edwins Lab",
+  "versionName": "1.0",
+  "versionCode": 1,
+  "packageId": "com.edwinslab.app",
+  "minSdk": 23,
+  "file": "/downloads/EdwinsLab-1.0.apk",
+  "sizeBytes": 7431876,
+  "sha256": "5244c5c4157081b4e19472320fe91da7419f1e0b0bfcafb1dd313fb06724a1d7",
+  "releasedAt": "2026-11-10"
+}

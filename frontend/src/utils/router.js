@@ -34,7 +34,7 @@ export function usePathname() {
   return useSyncExternalStore(subscribe, getSnapshot, () => "/");
 }
 
-export function navigate(to) {
+export function navigate(to, { replace = false } = {}) {
   if (typeof window === "undefined") return;
 
   const url = new URL(to, window.location.origin);
@@ -42,7 +42,11 @@ export function navigate(to) {
 
   if (target === getSnapshot()) return;
 
-  window.history.pushState({}, "", url);
+  if (replace) {
+    window.history.replaceState({}, "", url);
+  } else {
+    window.history.pushState({}, "", url);
+  }
   window.scrollTo({ top: 0, left: 0, behavior: "auto" });
   emit();
 }

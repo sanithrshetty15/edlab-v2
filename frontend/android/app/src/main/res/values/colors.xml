@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#C5FF41</color>
+    <color name="colorPrimaryDark">#1C1C1C</color>
+    <color name="colorAccent">#C5FF41</color>
+    <color name="edwins_dark">#1C1C1C</color>
+    <color name="edwins_lime">#C5FF41</color>
+    <color name="edwins_neutral">#F4F5F0</color>
+</resources>

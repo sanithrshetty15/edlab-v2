@@ -209,3 +209,23 @@ export function Check(props) {
     </Icon>
   );
 }
+
+export function Smartphone(props) {
+  return (
+    <Icon {...props}>
+      <rect x="6.5" y="2.5" width="11" height="19" rx="2.5" />
+      <path d="M10.5 18.5h3" />
+      <path d="M11 5.5h2" />
+    </Icon>
+  );
+}
+
+export function Share(props) {
+  return (
+    <Icon {...props}>
+      <path d="M12 16V3" />
+      <path d="m8 7 4-4 4 4" />
+      <path d="M6 12H5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2h-1" />
+    </Icon>
+  );
+}

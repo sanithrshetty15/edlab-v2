@@ -1,0 +1,8 @@
+{
+  "appId": "com.edwinslab.app",
+  "appName": "Edwins Lab",
+  "webDir": "dist",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "auto"
+  }
+}
