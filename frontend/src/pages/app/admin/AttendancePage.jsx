@@ -398,10 +398,10 @@ export default function AttendancePage() {
                         </div>
                       </td>
                       <td>{formatDate(record.entry_date)}</td>
-                      <td>{formatClockTime(record.entry_time?.slice(11, 16) || record.entry_time)}</td>
+                      <td>{formatClockTime(record.entry_time)}</td>
                       <td>
                         {record.exit_time
-                          ? formatClockTime(record.exit_time?.slice(11, 16) || record.exit_time)
+                          ? formatClockTime(record.exit_time)
                           : <Badge tone="accent" dot>Open</Badge>}
                       </td>
                       <td><Badge tone="neutral">{titleCase(record.source)}</Badge></td>

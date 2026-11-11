@@ -21,6 +21,43 @@ class Api::V1::MembersManagementController < Api::V1::BaseController
     }, status: :ok
   end
 
+  # POST /api/v1/members-management
+  def create
+    result = MemberRegistrationService.register(
+      params: member_creation_params,
+      ip_address: request.remote_ip,
+      user_agent: request.user_agent
+    )
+
+    if result[:success]
+      member = result[:member]
+
+      AuditLogService.log!(
+        user: current_user,
+        action: "member_created_by_admin",
+        resource_type: "Member",
+        resource_id: member.id,
+        details: {
+          login_id: member.login_id,
+          academic_year: member.academic_year,
+          created_by: current_user.email
+        },
+        ip_address: request.remote_ip
+      )
+
+      render json: {
+        success: true,
+        message: "Member account created successfully",
+        member: serialize_member_full(member)
+      }, status: :created
+    else
+      render json: {
+        success: false,
+        message: result[:error]
+      }, status: result[:status] || :unprocessable_entity
+    end
+  end
+
   # GET /api/v1/members-management/:id
   def show
     member = Member.includes(:user).find(params[:id])
@@ -133,14 +170,12 @@ class Api::V1::MembersManagementController < Api::V1::BaseController
         }, status: :unprocessable_entity
       end
       
-      if User.find_by(phone: phone, id: member.user.id).nil?
-        existing_user = User.find_by(phone: phone)
-        if existing_user && existing_user.member&.active? && existing_user.id != member.user.id
-          return render json: {
-            success: false,
-            message: "This phone number is already in use"
-          }, status: :unprocessable_entity
-        end
+      existing_user = User.find_by(phone: phone)
+      if existing_user && existing_user.id != member.user.id
+        return render json: {
+          success: false,
+          message: "This phone number is already in use"
+        }, status: :unprocessable_entity
       end
       
       changes[:phone] = { from: member.phone, to: phone }
@@ -234,6 +269,22 @@ class Api::V1::MembersManagementController < Api::V1::BaseController
     end
   end
 
+  def member_creation_params
+    params.permit(
+      :name,
+      :usn,
+      :roll_number,
+      :academic_year,
+      :branch,
+      :section,
+      :email,
+      :phone,
+      :password,
+      :password_confirmation,
+      :login_id
+    )
+  end
+
   def filter_members(scope)
     scope = scope.where(status: params[:status]) if params[:status].present?
     scope = scope.where(academic_year: params[:academic_year].to_i) if params[:academic_year].present?
@@ -243,11 +294,6 @@ class Api::V1::MembersManagementController < Api::V1::BaseController
     scope
   end
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 20).to_i, 100].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def validate_usn_uniqueness(usn, current_member)
     existing = Member.active.where.not(id: current_member.id).find_by(usn: usn)

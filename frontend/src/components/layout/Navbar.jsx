@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import wordmark from "../../assets/images/edwins-lab-wordmark.png";
 import { navigation, site } from "../../content/labContent";
-import { Button } from "../common";
-import { Download, Menu } from "../common/Icons";
+import { Menu } from "../common/Icons";
 import MenuOverlay from "./MenuOverlay";
 
 export default function Navbar() {
@@ -97,16 +96,6 @@ export default function Navbar() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
-            <Button
-              href="#download"
-              variant="primary"
-              size="sm"
-              className="nav-download whitespace-nowrap"
-            >
-              <Download className="h-4 w-4" />
-              <span className="hidden min-[375px]:inline">Download app</span>
-              <span className="min-[375px]:hidden">App</span>
-            </Button>
             <button
               ref={menuButtonRef}
               type="button"

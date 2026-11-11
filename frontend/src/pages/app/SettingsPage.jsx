@@ -108,13 +108,13 @@ export default function SettingsPage() {
           </div>
         </Panel>
 
-        <Panel title="Session" subtitle="Control the current browser session.">
+        <Panel title="Session" subtitle="Control this device session.">
           <ul className="lab-session-list">
             <li>
               <ShieldIcon className="h-4 w-4" />
               <div>
                 <strong>Storage</strong>
-                <p>Session token stored in this tab only</p>
+                <p>Encrypted device storage on Android; tab-only in the browser</p>
               </div>
               <Badge tone="success">Session</Badge>
             </li>
@@ -129,7 +129,7 @@ export default function SettingsPage() {
               <MailIcon className="h-4 w-4" />
               <div>
                 <strong>Session end</strong>
-                <p>Closing the tab ends local access. The server token expires automatically.</p>
+                <p>Signing out clears the local token. The server session expires automatically.</p>
               </div>
             </li>
           </ul>

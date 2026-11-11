@@ -2,7 +2,7 @@ class Api::V1::MessagesController < Api::V1::BaseController
   before_action :authenticate_user!
   before_action :require_password_change_completed!
   before_action :check_messaging_permissions!, only: [:create, :reply, :edit, :delete, :forward, :react, :pin, :star]
-  before_action :set_message, only: [:show, :edit, :delete, :reply_to, :get_replies, :get_reactions, :get_receipts, :get_starred, :get_pinned]
+  before_action :set_message, only: [:show, :edit, :delete, :reply, :get_replies, :react, :remove_reaction, :get_reactions, :pin, :unpin, :get_receipts, :star, :unstar, :get_starred]
 
   # GET /api/v1/messages
   def index
@@ -475,9 +475,12 @@ class Api::V1::MessagesController < Api::V1::BaseController
   private
 
   def check_messaging_permissions!
-    group_settings = GroupSettings.first
+    return if current_user.admin?
 
-    if group_settings.blank? || group_settings.permission == "admins_only"
+    group_settings = GroupSetting.first
+    return if group_settings.blank?
+
+    if group_settings.permission == "admins_only"
       return render json: {
         success: false,
         message: "Messaging is currently disabled for members"
@@ -502,11 +505,6 @@ class Api::V1::MessagesController < Api::V1::BaseController
     params.permit(:content)
   end
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 30).to_i, 100].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def serialize_message(message)
     {
@@ -537,7 +535,7 @@ class Api::V1::MessagesController < Api::V1::BaseController
           content_type: a.content_type,
           byte_size: a.byte_size,
           storage_key: a.storage_key,
-          url: rails_blob_url(a)
+          url: nil
         }
       },
       link_preview: message.link_preview,

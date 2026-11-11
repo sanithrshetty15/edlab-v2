@@ -1,16 +1,18 @@
 class AttendanceLog < ApplicationRecord
   belongs_to :member
-  belongs_to :period, class_name: "Semester", optional: true
-  belongs_to :device_event, optional: true
-  has_many :logout_records, class_name: "AttendanceLog", foreign_key: "login_log_id", dependent: :nullify
+  belongs_to :created_by, class_name: "User", optional: true
 
-  validates :member_id, presence: true
-  validates :login_at, presence: true
-  validates :status, inclusion: { in: %w[login logout unknown] }
+  validates :entry_date, presence: true
+  validates :entry_time, presence: true
 
-  scope :for_today, -> { where(login_at: Time.current.beginning_of_day..Time.current.end_of_day) }
-  scope :for_date, ->(date) { where(login_at: date.beginning_of_day..date.end_of_day) }
+  scope :for_today, -> { where(entry_date: Date.current) }
+  scope :for_date, ->(date) { where(entry_date: date) }
   scope :for_member, ->(member_id) { where(member_id: member_id) }
-  scope :by_status, ->(status) { where(status: status) }
-  scope :recent, ->(limit = 10) { order(login_at: :desc).limit(limit) }
+  scope :open_sessions, -> { where(exit_time: nil) }
+  scope :recent, ->(limit = 10) { order(entry_time: :desc).limit(limit) }
+
+  def duration_minutes
+    return nil unless exit_time
+    ((exit_time - entry_time) / 60).round
+  end
 end

@@ -1,11 +1,9 @@
 class MessageReaction < ApplicationRecord
-  belongs_to :message
-  belongs_to :member
+  belongs_to :group_message
+  belongs_to :user
 
   validates :emoji, inclusion: { in: %w[👍 ❤️ 😂 😮 😢 🙏] }
-  validates :member_id, uniqueness: { scope: :message_id, message: "already reacted to this message" }
+  validates :user_id, uniqueness: { scope: [:group_message_id, :emoji], message: "already reacted to this message" }
 
-  scope :for_message, ->(message_id) { where(message_id: message_id) }
-  scope :for_member, ->(member_id) { where(member_id: member_id) }
-  scope :by_emoji, ->(emoji) { where(emoji: emoji) }
+  scope :for_message, ->(message_id) { where(group_message_id: message_id) }
 end

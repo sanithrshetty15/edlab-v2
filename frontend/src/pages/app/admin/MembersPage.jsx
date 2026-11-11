@@ -15,6 +15,7 @@ import {
   PageHeader,
   Pagination,
   Panel,
+  PasswordField,
   Select,
   StatusBadge,
   TextInput,
@@ -24,6 +25,7 @@ import {
   ExternalIcon,
   KeyIcon,
   MailIcon,
+  PlusIcon,
   SearchIcon,
   ShieldIcon,
   UserIcon,
@@ -206,6 +208,225 @@ function EditMemberDialog({ member, onClose, onSaved }) {
   );
 }
 
+function CreateMemberDialog({ onClose, onCreated }) {
+  const [values, setValues] = useState({
+    name: "",
+    login_id: "",
+    email: "",
+    phone: "",
+    usn: "",
+    roll_number: "",
+    academic_year: "1",
+    branch: "",
+    section: "",
+    password: "",
+    password_confirmation: "",
+  });
+  const [errors, setErrors] = useState({});
+  const [formError, setFormError] = useState(null);
+  const [saving, setSaving] = useState(false);
+
+  const update = (key) => (event) => {
+    setValues((current) => ({ ...current, [key]: event.target.value }));
+  };
+
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (saving) return;
+
+    const nextErrors = {};
+    if (!values.name.trim()) nextErrors.name = "Name is required.";
+    if (!values.login_id.trim()) nextErrors.login_id = "Login ID is required.";
+    else if (!/^[\w.-]+$/.test(values.login_id.trim())) {
+      nextErrors.login_id = "Use letters, numbers, dots, or hyphens only.";
+    }
+    if (!values.email.trim()) nextErrors.email = "Email is required.";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
+      nextErrors.email = "Enter a valid email address.";
+    }
+    if (!values.phone.trim()) nextErrors.phone = "Phone is required.";
+    else if (!/^\+?[1-9]\d{7,14}$/.test(values.phone.trim())) {
+      nextErrors.phone = "Use an international format such as +919876543210.";
+    }
+    if (!values.usn.trim()) nextErrors.usn = "USN is required.";
+    else if (!/^[A-Z0-9]{6,15}$/i.test(values.usn.trim())) {
+      nextErrors.usn = "USN must be 6-15 letters and digits.";
+    }
+    if (!values.branch.trim()) nextErrors.branch = "Branch is required.";
+    if (!values.password) nextErrors.password = "Temporary password is required.";
+    else if (values.password.length < 8) {
+      nextErrors.password = "Use at least 8 characters.";
+    }
+    if (values.password !== values.password_confirmation) {
+      nextErrors.password_confirmation = "Passwords do not match.";
+    }
+
+    setErrors(nextErrors);
+    setFormError(null);
+    if (Object.keys(nextErrors).length) return;
+
+    setSaving(true);
+    try {
+      const result = await membersManagementApi.create({
+        name: values.name.trim(),
+        login_id: values.login_id.trim(),
+        email: values.email.trim(),
+        phone: values.phone.trim(),
+        usn: values.usn.trim().toUpperCase(),
+        roll_number: values.roll_number.trim(),
+        academic_year: values.academic_year,
+        branch: values.branch.trim(),
+        section: values.section.trim(),
+        password: values.password,
+        password_confirmation: values.password_confirmation,
+      });
+      onCreated(result);
+    } catch (error) {
+      setFormError(error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Add member account"
+      description="Create the official member record and sign-in credentials. Public registration is disabled."
+      size="lg"
+      footer={
+        <>
+          <AppButton variant="ghost" onClick={onClose} disabled={saving}>
+            Cancel
+          </AppButton>
+          <AppButton form="create-member-form" type="submit" variant="primary" loading={saving}>
+            Create member
+          </AppButton>
+        </>
+      }
+    >
+      <form id="create-member-form" className="lab-form-stack" onSubmit={handleSubmit} noValidate>
+        {formError && (
+          <Alert tone="danger" title="Member could not be created">
+            {formError.message}
+          </Alert>
+        )}
+
+        <div className="lab-form-grid">
+          <Field label="Full name" htmlFor="new-member-name" error={errors.name} required>
+            <TextInput
+              id="new-member-name"
+              value={values.name}
+              onChange={update("name")}
+              autoComplete="name"
+              disabled={saving}
+            />
+          </Field>
+          <Field label="Login ID" htmlFor="new-member-login" error={errors.login_id} required>
+            <TextInput
+              id="new-member-login"
+              value={values.login_id}
+              onChange={update("login_id")}
+              autoComplete="off"
+              spellCheck="false"
+              disabled={saving}
+            />
+          </Field>
+          <Field label="Email" htmlFor="new-member-email" error={errors.email} required>
+            <TextInput
+              id="new-member-email"
+              type="email"
+              value={values.email}
+              onChange={update("email")}
+              autoComplete="email"
+              disabled={saving}
+            />
+          </Field>
+          <Field label="Phone" htmlFor="new-member-phone" error={errors.phone} required>
+            <TextInput
+              id="new-member-phone"
+              type="tel"
+              value={values.phone}
+              onChange={update("phone")}
+              placeholder="+919876543210"
+              autoComplete="tel"
+              disabled={saving}
+            />
+          </Field>
+          <Field label="USN" htmlFor="new-member-usn" error={errors.usn} required>
+            <TextInput
+              id="new-member-usn"
+              value={values.usn}
+              onChange={update("usn")}
+              placeholder="4AL25CS000"
+              autoCapitalize="characters"
+              spellCheck="false"
+              disabled={saving}
+            />
+          </Field>
+          <Field label="Roll number" htmlFor="new-member-roll">
+            <TextInput
+              id="new-member-roll"
+              value={values.roll_number}
+              onChange={update("roll_number")}
+              disabled={saving}
+            />
+          </Field>
+          <Field label="Academic year" htmlFor="new-member-year" required>
+            <Select
+              id="new-member-year"
+              value={values.academic_year}
+              onChange={update("academic_year")}
+              disabled={saving}
+            >
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((year) => (
+                <option key={year} value={year}>Year {year}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Branch" htmlFor="new-member-branch" error={errors.branch} required>
+            <TextInput
+              id="new-member-branch"
+              value={values.branch}
+              onChange={update("branch")}
+              disabled={saving}
+            />
+          </Field>
+          <Field label="Section" htmlFor="new-member-section">
+            <TextInput
+              id="new-member-section"
+              value={values.section}
+              onChange={update("section")}
+              disabled={saving}
+            />
+          </Field>
+          <PasswordField
+            id="new-member-password"
+            label="Temporary password"
+            value={values.password}
+            onChange={update("password")}
+            autoComplete="new-password"
+            error={errors.password}
+            required
+            disabled={saving}
+          />
+          <PasswordField
+            id="new-member-password-confirmation"
+            label="Confirm password"
+            value={values.password_confirmation}
+            onChange={update("password_confirmation")}
+            autoComplete="new-password"
+            error={errors.password_confirmation}
+            required
+            disabled={saving}
+          />
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
 function MemberDetail({
   member,
   loading,
@@ -372,6 +593,7 @@ export default function MembersPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [editing, setEditing] = useState(null);
+  const [creating, setCreating] = useState(false);
   const [confirmAction, setConfirmAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -459,6 +681,12 @@ export default function MembersPage() {
         eyebrow="Admin console"
         title="Members"
         description="Search, review and manage official member records."
+        actions={
+          <AppButton variant="primary" onClick={() => setCreating(true)}>
+            <PlusIcon className="h-4 w-4" />
+            Add member
+          </AppButton>
+        }
       />
 
       {notice && (
@@ -616,6 +844,18 @@ export default function MembersPage() {
           onForceReset={() => setConfirmAction({ type: "reset", member: detail })}
           onDeactivate={() => setConfirmAction({ type: "deactivate", member: detail })}
           onStatusChange={handleStatusChange}
+        />
+      )}
+
+      {creating && (
+        <CreateMemberDialog
+          onClose={() => setCreating(false)}
+          onCreated={(result) => {
+            setCreating(false);
+            setNotice(result.message || "Member account created.");
+            setFilters((current) => ({ ...current, page: 1 }));
+            resource.reload();
+          }}
         />
       )}
 

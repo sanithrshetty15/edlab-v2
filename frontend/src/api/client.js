@@ -1,12 +1,17 @@
+import { isNativeSecureStorageAvailable, secureStorage } from "../services/secureStorage";
+
 const PRODUCTION_API_URL = "https://edwinslab.onrender.com";
 const RAW_BASE_URL =
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? PRODUCTION_API_URL : "");
 const API_BASE_URL = typeof RAW_BASE_URL === "string" ? RAW_BASE_URL.trim().replace(/\/+$/, "") : "";
 
+
 const TOKEN_KEY = "edwinslab.session.token";
 const DEFAULT_TIMEOUT = 20000;
 
 let memoryToken = null;
+let tokenLoaded = false;
+let loadPromise = null;
 
 function canUseSessionStorage() {
   try {
@@ -17,9 +22,32 @@ function canUseSessionStorage() {
 }
 
 export const tokenStore = {
+  async load() {
+    if (tokenLoaded) return memoryToken;
+    if (loadPromise) return loadPromise;
+
+    loadPromise = (async () => {
+      if (isNativeSecureStorageAvailable()) {
+        memoryToken = await secureStorage.get();
+      } else if (canUseSessionStorage()) {
+        try {
+          memoryToken = window.sessionStorage.getItem(TOKEN_KEY);
+        } catch {
+          memoryToken = null;
+        }
+      }
+      tokenLoaded = true;
+      loadPromise = null;
+      return memoryToken;
+    })();
+
+    return loadPromise;
+  },
   get() {
     if (memoryToken) return memoryToken;
-    if (!canUseSessionStorage()) return null;
+    if (tokenLoaded || isNativeSecureStorageAvailable() || !canUseSessionStorage()) {
+      return null;
+    }
     try {
       memoryToken = window.sessionStorage.getItem(TOKEN_KEY);
       return memoryToken;
@@ -27,8 +55,15 @@ export const tokenStore = {
       return null;
     }
   },
-  set(token) {
+  async set(token) {
     memoryToken = token;
+    tokenLoaded = true;
+
+    if (isNativeSecureStorageAvailable()) {
+      await secureStorage.set(token);
+      return;
+    }
+
     if (!canUseSessionStorage()) return;
     try {
       window.sessionStorage.setItem(TOKEN_KEY, token);
@@ -38,6 +73,13 @@ export const tokenStore = {
   },
   clear() {
     memoryToken = null;
+    tokenLoaded = true;
+
+    if (isNativeSecureStorageAvailable()) {
+      void secureStorage.remove();
+      return;
+    }
+
     if (!canUseSessionStorage()) return;
     try {
       window.sessionStorage.removeItem(TOKEN_KEY);

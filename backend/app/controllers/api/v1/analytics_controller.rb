@@ -287,7 +287,8 @@ class Api::V1::AnalyticsController < Api::V1::BaseController
       )
       .order(published_at: :desc)
 
-    total_reads = read_analytics.sum(:read_count)
+    total_reads = read_analytics.to_a.sum { |a| a.read_count.to_i }
+    total_members = User.where(active: true).where(role: %w[admin primary_admin member]).count
 
     render json: {
       success: true,
@@ -416,7 +417,7 @@ class Api::V1::AnalyticsController < Api::V1::BaseController
         },
         tasks: {
           pending: TaskSubmissionStatus.where(status: "submitted").count,
-          overdue: Task.where(notified_at_at: nil, deadline: ..Date.current, deleted_at: nil).count
+          overdue: Task.where(deadline: ..Date.current, deleted_at: nil).count
         },
         announcements: {
           published: Announcement.where.not(published_at: nil, deleted_at: nil).count
@@ -432,6 +433,15 @@ class Api::V1::AnalyticsController < Api::V1::BaseController
   end
 
   private
+
+  def require_admin!
+    return if current_user.admin?
+
+    render json: {
+      success: false,
+      message: "Administrator access required"
+    }, status: :forbidden
+  end
 
   def total_members
     @total_members ||= Member.active.count

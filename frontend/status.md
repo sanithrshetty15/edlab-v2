@@ -1,15 +1,38 @@
 # Edwins Lab frontend status
 
+_Last updated: 2026-11-11._
+
+## Latest update — authentication access
+
+- The public website navbar no longer has Sign in or Download app controls, and
+  the mobile menu has no member/admin login entry. The dedicated Download
+  section is unchanged.
+- The website no longer serves the portal: `/login`, `/register`,
+  `/forgot-password` and `/app/*` redirect to `/`. Login is available only in
+  the native Android app, which opens `/login` directly on launch.
+- The app USN placeholder is exactly `4AL25CS000`. The login screen has no
+  public registration link; password reset remains available.
+- Public self-registration is disabled at the API (`403`). Admins can create
+  members from Members → Add member through authenticated
+  `POST /api/v1/members-management`.
+- Verified in a rebuilt debug APK on the API 36 emulator, in Playwright, with
+  live API requests, and with `bin/rails test` (4 runs, 16 assertions,
+  0 failures). `npm run build` passes; `npm run lint` has 0 errors and one
+  pre-existing unrelated hook warning.
+- Still pending: rebuild/sign the downloadable APK (currently the older 1.0
+  build), and re-verify production once the deployed API is no longer 502.
+
 ## Current state
 
 - Branded intro completed in `src/components/intro/Intro.jsx`: lime panel
   rises to black, reveals the `Edwins Lab` logo/wordmark, holds, then
   dissolves into the site and reveals the main content.
 - Navbar restored as the second step after intro: fixed pill navigation with
-  `EDWINS LAB` wordmark, About/Linux/Testimonials/Download/Contact links and
-  a `Download app` CTA. The selected/active section is shown as a black pill
-  (Hero shows no extra selected link), and the mobile hamburger opens a
-  full-screen Maze-style lime menu.
+  `EDWINS LAB` wordmark and About/Linux/Testimonials/Download/Contact links.
+  The selected/active section is shown as a black pill (Hero shows no extra
+  selected link), and the mobile hamburger opens a full-screen Maze-style lime
+  menu. The public navbar no longer exposes Sign in, Member portal or Download
+  app; the dedicated Download section remains functional.
 - Hero is a stable two-column layout (desktop) with GSAP text/stage reveal
   (autoAlpha always 1; only position/scale animate) and a scroll-linked
   parallax exit. Content is always visible even if intro/animation fails.
@@ -95,15 +118,22 @@ and verified:
 - PWA: `public/manifest.webmanifest`, generated brand icons, `public/sw.js`
   (app-shell cache `edwinslab-shell-v1`), registration and update banner.
   Display is `standalone`; theme `#C5FF41`; background `#1C1C1C`.
-- Portal routing: `/login`, `/app` and `/app/*` lazily load `AppPortal`.
+- Portal routing is native-only. The Capacitor app renders `AppPortal` for
+  every loaded route and opens `/login` directly on launch. The public website
+  redirects `/login`, `/forgot-password`, `/register` and `/app/*` back to the
+  homepage, so the website does not expose a login or registration screen.
   Explore, the intro and the other homepage sections are unchanged.
-- `/login` renders the real member/admin login UI. With the production API
-  returning 502, submitting credentials shows the real timeout error state.
-  Successful sign-in remains untested until the backend responds.
+- Public self-registration is disabled in the UI and the API
+  (`POST /api/v1/members/register` returns HTTP 403). Member accounts are
+  created by an authenticated admin from Members → Add member; the admin API
+  is `POST /api/v1/members-management`. Forgot-password OTP reset remains
+  available in the native app login flow.
 - Android: Capacitor 7 project in `android/`; `com.edwinslab.app`, version
   `1.0` (versionCode 1), minSdk 23, targetSdk 35. Branded launcher/adaptive
   icons and splash; edge-to-edge margins with dark status bar icons on the
   light neutral background; hardware back navigates in-app history, then exits.
+  The checked-in/downloadable 1.0 APK predates these authentication changes
+  and must be rebuilt before distribution.
 - Signed release APK: `public/downloads/EdwinsLab-1.0.apk`, 7,431,876 bytes,
   SHA-256
   `5244c5c4157081b4e19472320fe91da7419f1e0b0bfcafb1dd313fb06724a1d7`,
@@ -112,9 +142,10 @@ and verified:
   `~/.config/edwinslab/edwinslab-release.jks` (password not stored in the
   repo). `public/downloads` is stripped from the bundled Android assets so the
   APK does not contain a copy of itself.
-- Deployment config: `vercel.json` adds SPA rewrites for `/explore`, `/login`,
-  `/app`, `/app/*` and asset headers, including the APK MIME type. Backend CORS
-  accepts the deployed origin plus `https://localhost` and
+- Deployment config: `vercel.json` keeps the SPA rewrite for `/explore` and
+  asset headers, including the APK MIME type, and redirects portal URLs
+  (`/login`, `/register`, `/forgot-password`, `/app`, `/app/*`) to the homepage.
+  Backend CORS accepts the deployed origin plus `https://localhost` and
   `capacitor://localhost`.
 
 ## Verification
@@ -142,9 +173,9 @@ Playwright. No physical-device testing was performed.
 - PWA offline: service worker active with controller, app-shell cache
   `edwinslab-shell-v1` present, and an offline reload rendered the shell,
   including the Download section.
-- Portal `/login`: the page renders; client-side validation, the pending state,
-  and the real "request timed out" error state were verified while the backend
-  was down. Successful authentication is untested (backend returned 502).
+- Native login screen: verified in the rebuilt debug APK after the access
+  changes; the app launches at `/login` and the login form is rendered. The
+  production API still returns 502, so production sign-in remains unverified.
 - APK on the same emulator: `adb install` succeeded; `com.edwinslab.app`
   launched with the branded native splash and web intro; Android app info showed
   Edwins Lab 1.0; the native Download card showed
@@ -158,6 +189,32 @@ Playwright. No physical-device testing was performed.
   Screen instructions (emulation only).
 - `npm run lint` completes with 0 errors (one pre-existing hook warning);
   `npm run build` succeeds.
+
+### Authentication access changes (2026-11-11)
+
+- Public website (Playwright, 1440 px and 390 px): navbar text contains no
+  Sign in or Download app control, and the mobile menu contains no member/admin
+  login entry. Visiting `/login`, `/register`, `/forgot-password` or
+  `/app/dashboard` redirects to `/` and renders no login/registration form.
+  The Download section is present and unchanged. No console errors.
+- Android debug build (API 36 emulator, `assembleDebug` with JDK 21): the app
+  launched at `/login` (WebView URL `https://localhost/login`) and showed the
+  sign-in screen directly. The USN field placeholder is exactly
+  `4AL25CS000`; there is no Create a member account link; the password reset
+  link is still present. Verified through Chrome DevTools against the running
+  WebView.
+- Backend (local Rails, integration tests and live requests): public
+  `POST /api/v1/members/register` returns HTTP 403 and creates no records;
+  unauthenticated `POST /api/v1/members-management` returns HTTP 401, a member
+  session receives HTTP 403, and an authenticated admin receives HTTP 201 and
+  the new member can log in. The existing member (`22H51A05935`) and admin
+  accounts still log in successfully.
+- Admin UI: using an authenticated admin session, opened Members, created a
+  member through the new Add member dialog, and confirmed the success notice.
+  The test used Capacitor platform simulation in Playwright because the web
+  login route is intentionally unavailable.
+- `bin/rails test`: 4 runs, 16 assertions, 0 failures, 0 errors (new
+  `test/integration/member_registration_access_test.rb`).
 
 ## Known limitations
 
@@ -183,10 +240,10 @@ Playwright. No physical-device testing was performed.
   sign-in, session handling and production CORS remain unverified.
 - Headless Chrome cannot install a PWA and reports only `in-incognito`; the
   real install was verified separately in Android Chrome.
-- The public site has no visible link to `/login`; the portal is reachable only
-  by URL/deep link. Because installed PWA/APK windows have no address bar, an
-  entry point must be added before members can reach the portal from the
-  installed app.
+- Login is intentionally available only inside the native Android app. The
+  checked-in signed APK is still version 1.0 and predates this change; a new
+  signed build is required before distributing the app. The PWA/public website
+  intentionally has no portal entry point.
 
 ## Open items
 
@@ -194,10 +251,12 @@ Playwright. No physical-device testing was performed.
   marquee.
 - Deploy the updated frontend (Vercel credentials required) and verify the
   production manifest, service worker, portal rewrites and APK download.
-- Restore the backend and verify real sign-in, sessions and CORS from both the
-  website and the installed APK.
-- Back up `~/.config/edwinslab/edwinslab-release.jks` securely and use the same
-  key for updates; bump `versionCode`/`versionName` for each release.
+- Restore the backend and verify real sign-in, sessions and CORS from the
+  installed APK. The website no longer hosts the login flow.
+- Rebuild and sign a new APK containing the native-only login, `4AL25CS000`
+  placeholder and admin-only member creation; bump `versionCode`/`versionName`.
+  Back up `~/.config/edwinslab/edwinslab-release.jks` securely and use the same
+  key for updates.
 - Optional: real demo target for hero "Watch demo" CTA.
 - Confirm final gallery captions and crops with lab members, and add more
   approved photographs through `labGallery`.

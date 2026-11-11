@@ -6,12 +6,17 @@ import AppLayout from "./AppLayout";
 import { PageLoading, Panel, AppButton } from "../components/app/Ui";
 import { AppLink } from "../components/app/Link";
 import LoginPage from "../pages/LoginPage";
+import ForgotPasswordPage from "../pages/ForgotPasswordPage";
 import PasswordChangePage from "../pages/app/PasswordChangePage";
 import DashboardPage from "../pages/app/DashboardPage";
 import ProfilePage from "../pages/app/ProfilePage";
 import AnnouncementsPage from "../pages/app/AnnouncementsPage";
 import EventsPage from "../pages/app/EventsPage";
 import MessagesPage from "../pages/app/MessagesPage";
+import MemberAttendancePage from "../pages/app/MemberAttendancePage";
+import MemberTasksPage from "../pages/app/MemberTasksPage";
+import NotificationsPage from "../pages/app/NotificationsPage";
+import MemberResourcesPage from "../pages/app/MemberResourcesPage";
 import SettingsPage from "../pages/app/SettingsPage";
 import MembersPage from "../pages/app/admin/MembersPage";
 import AttendancePage from "../pages/app/admin/AttendancePage";
@@ -60,6 +65,14 @@ function routeContent(pathname, isAdmin) {
       return <EventsPage />;
     case "/app/messages":
       return <MessagesPage />;
+    case "/app/my-attendance":
+      return <MemberAttendancePage />;
+    case "/app/my-tasks":
+      return <MemberTasksPage />;
+    case "/app/resources":
+      return <MemberResourcesPage />;
+    case "/app/notifications":
+      return <NotificationsPage />;
     case "/app/settings":
       return <SettingsPage />;
     case "/app/members":
@@ -83,18 +96,18 @@ function PortalRoutes() {
   const auth = useAuth();
   const pathname = usePathname();
   const isLogin = pathname === "/login";
-  const isAppRoute = pathname === "/app" || pathname.startsWith("/app/");
+  const isForgotPassword = pathname === "/forgot-password";
   const isPasswordRoute = pathname === "/app/change-password";
 
   useEffect(() => {
     if (auth.status === "loading") return;
 
     if (!auth.isAuthenticated) {
-      if (isAppRoute && !isLogin) navigate("/login", { replace: true });
+      if (!isLogin && !isForgotPassword) navigate("/login", { replace: true });
       return;
     }
 
-    if (isLogin) {
+    if (isLogin || isForgotPassword) {
       navigate("/app/dashboard", { replace: true });
       return;
     }
@@ -116,7 +129,7 @@ function PortalRoutes() {
     auth.status,
     auth.isAuthenticated,
     auth.mustChangePassword,
-    isAppRoute,
+    isForgotPassword,
     isLogin,
     isPasswordRoute,
     pathname,
@@ -128,10 +141,11 @@ function PortalRoutes() {
 
   if (!auth.isAuthenticated) {
     if (isLogin) return <LoginPage sessionError={auth.sessionError} expired={auth.expired} />;
+    if (isForgotPassword) return <ForgotPasswordPage />;
     return <PageLoading label="Taking you to sign in" />;
   }
 
-  if (isLogin || pathname === "/app" || (!isPasswordRoute && auth.mustChangePassword)) {
+  if (isLogin || isForgotPassword || pathname === "/app" || (!isPasswordRoute && auth.mustChangePassword)) {
     return <PageLoading label="Opening your workspace" />;
   }
 

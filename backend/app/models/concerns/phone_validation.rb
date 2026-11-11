@@ -3,7 +3,7 @@ module PhoneValidation
 
   included do
     validates :phone, presence: true
-    validates :phone, format: { with: /\\A\\+?[1-9]\\d{7,14}\\z/, message: "must be a valid phone number (include country code if international)" }, allow_blank: true
+    validates :phone, format: { with: /\A\+?[1-9]\d{7,14}\z/, message: "must be a valid phone number (include country code if international)" }, allow_blank: true
   end
 
   def phone_phone_verified?

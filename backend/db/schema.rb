@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_063207) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_11_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -126,6 +126,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_063207) do
     t.string "approval_reason"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "quantity", default: 1, null: false
     t.index ["approved_by_id"], name: "index_borrow_records_on_approved_by_id"
     t.index ["idempotency_key"], name: "index_borrow_records_on_idempotency_key", unique: true, where: "(idempotency_key IS NOT NULL)"
     t.index ["inventory_item_id"], name: "index_borrow_records_on_inventory_item_id"
@@ -201,6 +202,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_063207) do
     t.index ["created_by_id"], name: "index_events_on_created_by_id"
     t.index ["date"], name: "index_events_on_date"
     t.index ["deleted_at"], name: "index_events_on_deleted_at"
+  end
+
+  create_table "extension_requests", force: :cascade do |t|
+    t.bigint "borrow_record_id", null: false
+    t.bigint "member_id", null: false
+    t.date "requested_return_date", null: false
+    t.text "reason", null: false
+    t.string "status", default: "pending", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["borrow_record_id"], name: "index_extension_requests_on_borrow_record_id", unique: true
+    t.index ["member_id"], name: "index_extension_requests_on_member_id"
   end
 
   create_table "faq_categories", force: :cascade do |t|
@@ -579,6 +592,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_063207) do
   add_foreign_key "contact_messages", "members"
   add_foreign_key "device_events", "device_registrations"
   add_foreign_key "events", "users", column: "created_by_id"
+  add_foreign_key "extension_requests", "borrow_records"
+  add_foreign_key "extension_requests", "members"
   add_foreign_key "faqs", "faq_categories"
   add_foreign_key "group_messages", "group_messages", column: "forwarded_from_id"
   add_foreign_key "group_messages", "group_messages", column: "reply_to_id"

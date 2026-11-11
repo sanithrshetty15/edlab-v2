@@ -64,10 +64,9 @@ class MessageForwardingService
   end
 
   def self.create_receipts_for_message(message, sender)
-    all_user_ids = User
-      .joins(:member)
-      .where(members: { deleted_at: nil, status: "active" })
-      .or(User.where(role: "admin", active: true))
+    active_member_ids = Member.where(deleted_at: nil, status: "active").select(:user_id)
+    all_user_ids = User.where(active: true, id: active_member_ids)
+      .or(User.where(active: true, role: %w[admin primary_admin]))
       .pluck(:id)
 
     all_user_ids.each do |user_id|

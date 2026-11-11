@@ -1,9 +1,8 @@
 class MessagePin < ApplicationRecord
-  belongs_to :message
-  belongs_to :member
+  belongs_to :group_message
+  belongs_to :pinned_by, class_name: "User"
 
-  validates :member_id, uniqueness: { scope: :message_id, message: "already pinned this message" }
+  validates :group_message_id, uniqueness: true
 
-  scope :for_message, ->(message_id) { where(message_id: message_id) }
-  scope :for_member, ->(member_id) { where(member_id: member_id) }
+  scope :for_message, ->(message_id) { where(group_message_id: message_id) }
 end

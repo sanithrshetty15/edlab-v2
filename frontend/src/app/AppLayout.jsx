@@ -21,8 +21,13 @@ import {
   UserIcon,
   UsersIcon,
   ClockIcon,
+  BellIcon,
+  AlertIcon,
 } from "../components/app/AppIcons";
 import { Avatar, Badge } from "../components/app/Ui";
+import { notificationsApi } from "../api/services";
+import { useApiResource } from "../hooks/useApiResource";
+import { useNetworkStatus } from "../hooks/useNetworkStatus";
 import { navigate, usePathname } from "../utils/router";
 
 const MEMBER_GROUPS = [
@@ -32,7 +37,11 @@ const MEMBER_GROUPS = [
       { to: "/app/dashboard", label: "Dashboard", icon: DashboardIcon },
       { to: "/app/announcements", label: "Announcements", icon: MegaphoneIcon },
       { to: "/app/events", label: "Events", icon: CalendarIcon },
+      { to: "/app/my-attendance", label: "My attendance", icon: ClockIcon },
+      { to: "/app/my-tasks", label: "My tasks", icon: CheckSquareIcon },
+      { to: "/app/resources", label: "Lab resources", icon: BoxIcon },
       { to: "/app/messages", label: "Messages", icon: MessageIcon },
+      { to: "/app/notifications", label: "Notifications", icon: BellIcon },
     ],
   },
   {
@@ -72,7 +81,10 @@ const ADMIN_GROUPS = [
   },
   {
     label: "Account",
-    items: [{ to: "/app/settings", label: "Settings", icon: SettingsIcon }],
+    items: [
+      { to: "/app/notifications", label: "Notifications", icon: BellIcon },
+      { to: "/app/settings", label: "Settings", icon: SettingsIcon },
+    ],
   },
 ];
 
@@ -82,6 +94,10 @@ const PAGE_TITLES = {
   "/app/announcements": "Announcements",
   "/app/events": "Events",
   "/app/messages": "Messages",
+  "/app/my-attendance": "My attendance",
+  "/app/my-tasks": "My tasks",
+  "/app/resources": "Lab resources",
+  "/app/notifications": "Notifications",
   "/app/settings": "Settings",
   "/app/members": "Members",
   "/app/attendance": "Attendance",
@@ -131,6 +147,23 @@ export default function AppLayout({ children }) {
       : "Administrator"
     : "Member";
   const pageTitle = PAGE_TITLES[pathname] || "Edwins Lab";
+  const network = useNetworkStatus();
+  const unreadResource = useApiResource(
+    () => notificationsApi.unreadCount(),
+    "layout-unread-count",
+  );
+  const unreadCount = unreadResource.data?.unread_count ?? 0;
+  const reloadUnread = unreadResource.reload;
+
+  useEffect(() => {
+    const refresh = () => reloadUnread();
+    const interval = window.setInterval(refresh, 60000);
+    window.addEventListener("lab:notifications-changed", refresh);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("lab:notifications-changed", refresh);
+    };
+  }, [reloadUnread]);
 
   useEffect(() => {
     document.body.classList.add("app-mode");
@@ -268,6 +301,24 @@ export default function AppLayout({ children }) {
               {roleLabel}
             </Badge>
 
+            <AppLink
+              to="/app/notifications"
+              className="lab-topbar__bell"
+              aria-label={
+                unreadCount
+                  ? `Notifications, ${unreadCount} unread`
+                  : "Notifications"
+              }
+              title="Notifications"
+            >
+              <BellIcon className="h-4 w-4" />
+              {unreadCount > 0 && (
+                <span className="lab-topbar__bell-count">
+                  {unreadCount > 9 ? "9+" : unreadCount}
+                </span>
+              )}
+            </AppLink>
+
             <div className="lab-user-menu" ref={userMenuRef}>
               <button
                 type="button"
@@ -297,6 +348,11 @@ export default function AppLayout({ children }) {
                     <UserIcon className="h-4 w-4" />
                     Profile
                   </AppLink>
+                  <AppLink to="/app/notifications" className="lab-user-menu__item" role="menuitem">
+                    <BellIcon className="h-4 w-4" />
+                    Notifications
+                    {unreadCount > 0 && <span className="lab-user-menu__count">{unreadCount}</span>}
+                  </AppLink>
                   <AppLink to="/app/settings" className="lab-user-menu__item" role="menuitem">
                     <SettingsIcon className="h-4 w-4" />
                     Account settings
@@ -321,6 +377,16 @@ export default function AppLayout({ children }) {
             </div>
           </div>
         </header>
+
+        {!network.connected && (
+          <div className="lab-offline-banner" role="status">
+            <AlertIcon className="h-4 w-4" />
+            <div>
+              <strong>You are offline</strong>
+              <span>Saved screens stay available. New data will load when the connection returns.</span>
+            </div>
+          </div>
+        )}
 
         <main id="app-main" className="lab-main" tabIndex={-1}>
           {children}

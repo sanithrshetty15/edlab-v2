@@ -32,6 +32,7 @@ Rails.application.routes.draw do
 
       # Members management (admin only)
       get "members-management", to: "members_management#index"
+      post "members-management", to: "members_management#create"
       get "members-management/:id", to: "members_management#show", constraints: { id: /[0-9]+/ }
       patch "members-management/:id/status", to: "members_management#update_status", constraints: { id: /[0-9]+/ }
       patch "members-management/:id/_fields", to: "members_management#update_official_fields", constraints: { id: /[0-9]+/ }
@@ -98,6 +99,7 @@ Rails.application.routes.draw do
       post "announcements/:id/toggle-pin", to: "announcements#toggle_pin", constraints: { id: /[0-9]+/ }
       delete "announcements/:id", to: "announcements#destroy", constraints: { id: /[0-9]+/ }
       get "announcements/:id/read-status", to: "announcements#read_status", constraints: { id: /[0-9]+/ }
+      post "announcements/:id/read", to: "announcements#mark_read", constraints: { id: /[0-9]+/ }
 
       # Events
       get "events", to: "events#index"

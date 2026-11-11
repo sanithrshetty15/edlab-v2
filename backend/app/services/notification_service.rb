@@ -1,5 +1,5 @@
 class NotificationService
-  def self.notify_message(message, sender:)
+  def self.notify_message(message:, sender:)
     all_user_ids = User
       .where.not(id: sender.id)
       .where(active: true)
@@ -71,6 +71,8 @@ class NotificationService
   end
 
   def self.notify_announcement(announcement, created_by:)
+    return unless announcement.published_at.present?
+
     target_users = User
       .where(active: true)
       .where("role = 'admin' OR (role = 'member' AND EXISTS (
@@ -136,7 +138,7 @@ class NotificationService
 
   def self.notify_task_submission(task_submission, submitted_by:)
     task = task_submission.task
-    admins = User.joins(:admin).where(admins: { active: true })
+    admins = User.joins(:admin).where(users: { active: true })
 
     admins.each do |admin|
       Notification.create!(
@@ -166,7 +168,7 @@ class NotificationService
   end
 
   def self.notify_borrow_request(borrow_record, requested_by:)
-    admins = User.joins(:admin).where(admins: { active: true })
+    admins = User.joins(:admin).where(users: { active: true })
 
     admins.each do |admin|
       Notification.create!(
@@ -179,6 +181,20 @@ class NotificationService
         is_read: false
       )
     end
+  end
+
+  def self.notify_borrow_rejected(borrow_record, rejected_by:, reason:)
+    member_user = borrow_record.member.user
+
+    Notification.create!(
+      user_id: member_user.id,
+      title: "Borrow request rejected",
+      body: "Your request for '#{borrow_record.inventory_item.name}' was rejected#{reason.present? ? ": #{reason}" : "."}",
+      notification_type: "inventory_rejected",
+      subject_type: "BorrowRecord",
+      subject_id: borrow_record.id,
+      is_read: false
+    )
   end
 
   def self.notify_borrow_approved(borrow_record, approved_by:)
@@ -236,7 +252,7 @@ class NotificationService
 
   def self.notify_admin_created(admin, created_by:)
     notify_admin_of_action(
-      recipients: User.joins(:admin).where(admins: { is_primary: true, active: true }),
+      recipients: User.joins(:admin).where(admins: { is_primary: true }, users: { active: true }),
       title: "New admin created",
       body: "#{created_by.admin.name} created admin account for #{admin.name} (#{admin.user.email})",
       type: "administrative_update",
@@ -247,7 +263,7 @@ class NotificationService
 
   def self.notify_admin_removed(admin, removed_by:)
     notify_admin_of_action(
-      recipients: User.joins(:admin).where(admins: { is_primary: true, active: true }),
+      recipients: User.joins(:admin).where(admins: { is_primary: true }, users: { active: true }),
       title: "Admin removed",
       body: "#{removed_by.admin.name} removed admin account for #{admin.name} (#{admin.user.email})",
       type: "administrative_update",
@@ -258,7 +274,7 @@ class NotificationService
 
   def self.notify_member_status_change(member, changed_by:, new_status:)
     notify_admin_of_action(
-      recipients: User.joins(:admin).where(admins: { active: true }),
+      recipients: User.joins(:admin).where(users: { active: true }),
       title: "Member status changed",
       body: "#{changed_by.admin.name} changed #{member.name}'s status to #{new_status}",
       type: "administrative_update",
@@ -268,7 +284,7 @@ class NotificationService
   end
 
   def self.notify_contact_message_received(message)
-    admins = User.joins(:admin).where(admins: { active: true })
+    admins = User.joins(:admin).where(users: { active: true })
 
     admins.each do |admin|
       Notification.create!(
@@ -286,10 +302,12 @@ class NotificationService
   private
 
   def self.send_email_notification_to_admins(subject:, body:)
-    admin_users = User.joins(:admin).where(admins: { active: true })
+    admin_users = User.joins(:admin).where(users: { active: true })
+
+    return unless defined?(AdminMailer)
 
     admin_users.each do |admin|
-      AdminMailer.notification(admin, subject, body).deliver_later
+      safe_deliver { AdminMailer.notification(admin, subject, body).deliver_later }
     end
   end
 
@@ -301,9 +319,17 @@ class NotificationService
       ))")
       .pluck(:id)
 
+    return unless defined?(UserMailer)
+
     target_users.each do |user_id|
-      UserMailer.announcement_notification(User.find(user_id), announcement).deliver_later
+      safe_deliver { UserMailer.announcement_notification(User.find(user_id), announcement).deliver_later }
     end
+  end
+
+  def self.safe_deliver
+    yield
+  rescue => e
+    Rails.logger.warn("Email notification failed: #{e.class} - #{e.message}")
   end
 
   def self.notify_admin_of_action(recipients:, title:, body:, type:, subject_type:, subject_id:)

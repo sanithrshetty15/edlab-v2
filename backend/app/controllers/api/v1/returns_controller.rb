@@ -1,8 +1,8 @@
 class Api::V1::ReturnsController < Api::V1::BaseController
   before_action :authenticate_user!
   before_action :require_password_change_completed!
-  before_action :set_return_request, only: [:show, :confirm_return]
-  before_action :set_borrow_record_for_return, only: [:create, :request_return]
+  before_action :set_return_request, only: [:confirm_return]
+  before_action :set_borrow_record_for_return, only: [:create]
 
   # GET /api/v1/returns/requests
   def index
@@ -17,7 +17,7 @@ class Api::V1::ReturnsController < Api::V1::BaseController
 
     render json: {
       success: true,
-      requests: requests.map { |r| serialize_return_request(r) },
+      requests: requests.items.map { |r| serialize_return_request(r) },
       pagination: {
         page: requests.current_page,
         per_page: requests.per_page,
@@ -111,7 +111,7 @@ class Api::V1::ReturnsController < Api::V1::BaseController
 
     render json: {
       success: true,
-      requests: requests.map { |r| serialize_return_request_admin(r) },
+      requests: requests.items.map { |r| serialize_return_request_admin(r) },
       pagination: {
         page: requests.current_page,
         per_page: requests.per_page,
@@ -243,11 +243,6 @@ class Api::V1::ReturnsController < Api::V1::BaseController
     }, status: :not_found
   end
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 20).to_i, 50].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def serialize_return_request(return_request)
     {

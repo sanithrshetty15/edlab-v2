@@ -17,7 +17,7 @@ class Member < ApplicationRecord
   validates :branch, presence: true, length: { maximum: 100 }
   validates :email, presence: true, uniqueness: true, format: { with: URI::MailTo::EMAIL_REGEXP }
   validates :phone, presence: true
-  validates :usn, uniqueness: true, allow_nil: true, allow_blank: true, format: { with: /\A[A-Z]{2,3}\d{2}[A-Z]{2}\d{3,4}\z/, message: "must be in format like 22H51A05P6", allow_blank: true }
+  validates :usn, uniqueness: true, allow_nil: true, allow_blank: true, format: { with: /\A[A-Z0-9]{6,15}\z/, message: "must be 6-15 letters and digits", allow_blank: true }
   validates :roll_number, uniqueness: true, allow_nil: true, allow_blank: true, format: { with: /\A[\w-]+\z/, message: "contains invalid characters", allow_blank: true }
   validates :status, inclusion: { in: %w[active inactive deactivated] }
   %w[github_url linkedin_url portfolio_url].each do |field|
@@ -33,5 +33,9 @@ class Member < ApplicationRecord
 
   def full_profile?
     usn.present? || roll_number.present?
+  end
+
+  def active?
+    status == "active" && deleted_at.nil?
   end
 end

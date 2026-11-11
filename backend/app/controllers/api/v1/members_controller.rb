@@ -1,41 +1,13 @@
 class Api::V1::MembersController < Api::V1::BaseController
-  before_action :authenticate_user!
-  before_action :require_password_change_completed!, except: [:update_profile, :accept_lab_rules]
+  before_action :authenticate_user!, except: [:register]
+  before_action :require_password_change_completed!, except: [:register, :update_profile, :accept_lab_rules]
 
   # POST /api/v1/members/register
   def register
-    result = MemberRegistrationService.register(
-      params: registration_params,
-      ip_address: request.remote_ip,
-      user_agent: request.user_agent
-    )
-
-    if result[:success]
-      AuditLogService.log!(
-        user: nil,
-        action: "member_registered",
-        resource_type: "Member",
-        resource_id: result[:member].id,
-        details: { login_id: result[:member].login_id, academic_year: result[:member].academic_year },
-        ip_address: request.remote_ip
-      )
-
-      render json: {
-        success: true,
-        message: "Registration successful. Please check your email for verification.",
-        member: serialize_member(result[:member]),
-        user: {
-          id: result[:user].id,
-          email: result[:user].email,
-          role: result[:user].role
-        }
-      }, status: :created
-    else
-      render json: {
-        success: false,
-        message: result[:error]
-      }, status: result[:status] || :unprocessable_entity
-    end
+    render json: {
+      success: false,
+      message: "Public registration is disabled. Member accounts are created by lab administrators."
+    }, status: :forbidden
   end
 
   # GET /api/v1/members/me
@@ -222,23 +194,6 @@ class Api::V1::MembersController < Api::V1::BaseController
 
   private
 
-  def registration_params
-    params.permit(
-      :name,
-      :usn,
-      :roll_number,
-      :academic_year,
-      :branch,
-      :section,
-      :email,
-      :phone,
-      :password,
-      :password_confirmation,
-      :login_id,
-      :accept_lab_rules
-    )
-  end
-
   def profile_params
     params.permit(
       :github_url,
@@ -260,7 +215,7 @@ class Api::V1::MembersController < Api::V1::BaseController
       branch: member.branch,
       section: member.section,
       email: member.email,
-      phone: member.phone_phone_verified? ? member.phone : nil,
+      phone: member.phone_verified? ? member.phone : nil,
       phone_verified: member.phone_verified,
       github_url: member.github_url,
       linkedin_url: member.linkedin_url,

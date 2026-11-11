@@ -1,5 +1,6 @@
 class ExtensionRequest < ApplicationRecord
   belongs_to :borrow_record
+  belongs_to :member
 
   validates :requested_return_date, presence: true
   validates :reason, presence: true, length: { maximum: 1000 }

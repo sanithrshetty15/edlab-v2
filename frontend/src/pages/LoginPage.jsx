@@ -157,7 +157,8 @@ export default function LoginPage({ sessionError, expired = false }) {
             <p className="login-head__eyebrow">Welcome back</p>
             <h2>Sign in to your account</h2>
             <p>
-              Use your lab credentials. Sessions are stored for this browser tab only.
+              Use your lab credentials. On the Android app your session is stored in
+              encrypted device storage.
             </p>
           </header>
 
@@ -227,7 +228,7 @@ export default function LoginPage({ sessionError, expired = false }) {
                       className={`lab-input--with-icon ${errors.loginId ? "lab-input--invalid" : ""}`}
                       value={loginId}
                       onChange={(event) => setLoginId(event.target.value)}
-                      placeholder={loginType === "usn" ? "22H51A05P6" : "Your roll number"}
+                      placeholder={loginType === "usn" ? "4AL25CS000" : "Your roll number"}
                       autoComplete="username"
                       autoCapitalize="characters"
                       spellCheck="false"
@@ -293,8 +294,9 @@ export default function LoginPage({ sessionError, expired = false }) {
           </form>
 
           <p className="login-help">
-            Need an account or a password reset? Contact the lab at{" "}
-            <a href="mailto:edwinsoslab@gmail.com">edwinsoslab@gmail.com</a>.
+            Forgot your password? <AppLink to="/forgot-password">Reset it with email</AppLink>.
+            <br />
+            Member accounts are created by lab administrators.
           </p>
 
           <p className="login-legal">

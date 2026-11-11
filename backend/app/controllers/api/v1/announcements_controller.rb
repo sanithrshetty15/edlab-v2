@@ -62,6 +62,25 @@ class Api::V1::AnnouncementsController < Api::V1::BaseController
     }, status: :ok
   end
 
+  # POST /api/v1/announcements/:id/read
+  def mark_read
+    announcement = Announcement.find_by(id: params[:id], deleted_at: nil)
+    unless announcement
+      return render json: { success: false, message: "Announcement not found" }, status: :not_found
+    end
+
+    read = announcement.announcement_reads.find_or_initialize_by(user_id: current_user.id)
+    read.read_at ||= Time.current
+    read.save!
+
+    render json: {
+      success: true,
+      message: "Announcement marked as read",
+      read_at: read.read_at,
+      read_by_count: announcement.announcement_reads.count
+    }, status: :ok
+  end
+
   # POST /api/v1/announcements
   def create
     title = params[:title].to_s.strip
@@ -96,10 +115,9 @@ class Api::V1::AnnouncementsController < Api::V1::BaseController
     end
 
     announcement.reload
-    announcement.announcement_reads.create!(
-      user_id: current_user.id,
-      read_at: Time.current
-    )
+    announcement.announcement_reads.find_or_create_by!(user_id: current_user.id) do |read|
+      read.read_at = Time.current
+    end
 
     AuditLogService.log_announcement_created(announcement, created_by: current_user)
 
@@ -220,10 +238,9 @@ class Api::V1::AnnouncementsController < Api::V1::BaseController
       )
     end
 
-    announcement.announcement_reads.create!(
-      user_id: current_user.id,
-      read_at: Time.current
-    )
+    announcement.announcement_reads.find_or_create_by!(user_id: current_user.id) do |read|
+      read.read_at = Time.current
+    end
 
     AuditLogService.log_announcement_published(announcement, published_by: current_user)
 
@@ -334,13 +351,14 @@ class Api::V1::AnnouncementsController < Api::V1::BaseController
       }, status: :not_found
     end
 
-    unread_members = Member.active
-      .joins(:user)
-      .where(users: { active: true })
-      .where.not(id: announcement.announcement_reads.pluck(:user_id))
-      .count
-
-    total_members = Member.active.count
+    read_user_ids = announcement.announcement_reads.pluck(:user_id)
+    target_users = User.where(active: true).where(
+      "role = 'admin' OR role = 'primary_admin' OR (role = 'member' AND EXISTS (
+        SELECT 1 FROM members WHERE members.user_id = users.id AND members.deleted_at IS NULL AND members.status = 'active'
+      ))"
+    )
+    total_members = target_users.count
+    unread_members = target_users.where.not(id: read_user_ids).count
 
     render json: {
       success: true,
@@ -364,11 +382,6 @@ class Api::V1::AnnouncementsController < Api::V1::BaseController
     end
   end
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 20).to_i, 50].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def serialize_announcement(announcement)
     {
@@ -390,8 +403,7 @@ class Api::V1::AnnouncementsController < Api::V1::BaseController
   def serialize_announcement_full(announcement)
     serialize_announcement(announcement).merge(
       content: announcement.content,
-      read_by_count: announcement.announcement_reads.count,
-      expires_at: announcement.read_at
+      read_by_count: announcement.announcement_reads.count
     )
   end
 end

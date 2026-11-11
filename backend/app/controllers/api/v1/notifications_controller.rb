@@ -141,11 +141,6 @@ class Api::V1::NotificationsController < Api::V1::BaseController
 
   private
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 20).to_i, 50].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def serialize_notification(notification)
     {

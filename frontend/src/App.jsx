@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect } from "react";
+import { Capacitor } from "@capacitor/core";
 import "./App.css";
 import Intro from "./components/intro/Intro";
 import Navbar from "./components/layout/Navbar";
@@ -6,7 +7,7 @@ import PwaUpdateBanner from "./components/pwa/PwaUpdateBanner";
 import ExplorePage from "./pages/ExplorePage";
 import { Hero, About, Linux, Testimonials, Download, Footer } from "./sections";
 import { refreshScrollTriggers } from "./utils/animations";
-import { usePathname } from "./utils/router";
+import { navigate, usePathname } from "./utils/router";
 
 const AppPortal = lazy(() => import("./app/AppPortal"));
 
@@ -25,30 +26,48 @@ function PortalLoading() {
 
 export default function App() {
   const pathname = usePathname();
+  const isNativeApp = Capacitor.isNativePlatform();
   const isExplore = pathname === "/explore";
-  const isPortal =
-    pathname === "/login" || pathname === "/app" || pathname.startsWith("/app/");
+  const isPortalPath =
+    pathname === "/login" ||
+    pathname === "/forgot-password" ||
+    pathname === "/app" ||
+    pathname.startsWith("/app/");
+  const isRemovedPublicRoute = pathname === "/register";
 
   useEffect(() => refreshScrollTriggers(), [pathname]);
 
   useEffect(() => {
+    if (isNativeApp) {
+      if (!isPortalPath) navigate("/login", { replace: true });
+      return;
+    }
+
+    if (isPortalPath || isRemovedPublicRoute) {
+      navigate("/", { replace: true });
+    }
+  }, [isNativeApp, isPortalPath, isRemovedPublicRoute]);
+
+  useEffect(() => {
+    if (isNativeApp) return;
+
     if (isExplore) {
       document.title = EXPLORE_TITLE;
-    } else if (!isPortal) {
+    } else if (!isPortalPath) {
       document.title = HOME_TITLE;
     }
-  }, [isExplore, isPortal]);
+  }, [isExplore, isNativeApp, isPortalPath]);
 
   let content;
 
-  if (isExplore) {
-    content = <ExplorePage />;
-  } else if (isPortal) {
+  if (isNativeApp) {
     content = (
       <Suspense fallback={<PortalLoading />}>
         <AppPortal />
       </Suspense>
     );
+  } else if (isExplore) {
+    content = <ExplorePage />;
   } else {
     content = (
       <Intro>

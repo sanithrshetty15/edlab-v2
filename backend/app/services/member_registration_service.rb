@@ -47,7 +47,7 @@ class MemberRegistrationService
         section: section.presence,
         email: email,
         phone: phone,
-        must_change_password: true
+        must_change_password: false,
       )
 
       if params[:accept_lab_rules]
@@ -110,8 +110,8 @@ class MemberRegistrationService
     end
 
     if usn.present?
-      unless usn.match?(/\A[A-Z]{2,3}\d{2}[A-Z]{2}\d{3,4}\z/)
-        raise RegistrationError, "Please provide a valid USN format (e.g., 22H51A05P6)"
+      unless usn.match?(/\A[A-Z0-9]{6,15}\z/)
+        raise RegistrationError, "USN must be 6-15 letters and digits"
       end
     end
 
@@ -126,9 +126,11 @@ class MemberRegistrationService
       raise RegistrationError, "This login ID is already registered"
     end
 
-    existing_member = Member.active.find_by(usn: usn)
-    if existing_member
-      raise RegistrationError, "This USN is already registered"
+    if usn.present?
+      existing_member = Member.active.find_by(usn: usn)
+      if existing_member
+        raise RegistrationError, "This USN is already registered"
+      end
     end
 
     if roll_number.present?
@@ -138,13 +140,11 @@ class MemberRegistrationService
       end
     end
 
-    existing_user = User.find_by(email: email)
-    if existing_user && existing_user.member&.active?
+    if User.exists?(email: email)
       raise RegistrationError, "An account with this email already exists"
     end
 
-    existing_user = User.find_by(phone: phone)
-    if existing_user && existing_user.member&.active?
+    if User.exists?(phone: phone)
       raise RegistrationError, "An account with this phone number already exists"
     end
 

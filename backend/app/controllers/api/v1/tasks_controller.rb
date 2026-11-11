@@ -21,9 +21,14 @@ class Api::V1::TasksController < Api::V1::BaseController
       scope = scope.where(task_type: params[:task_type])
     end
 
-    tasks = paginate(scope.includes(:created_by))
-
     member = current_user.member if current_user.member? && current_user.member.status == "active"
+
+    if member && !current_user.admin?
+      targeted_task_ids = TaskTarget.where(academic_year: member.academic_year).select(:task_id)
+      scope = scope.where(id: targeted_task_ids)
+    end
+
+    tasks = paginate(scope.includes(:created_by))
 
     render json: {
       success: true,
@@ -78,6 +83,8 @@ class Api::V1::TasksController < Api::V1::BaseController
       deadline: deadline,
       target_academic_years: target_academic_years
     )
+
+    task = nil
 
     ActiveRecord::Base.transaction do
       task = Task.create!(
@@ -326,7 +333,7 @@ class Api::V1::TasksController < Api::V1::BaseController
       }, status: :unprocessable_entity
     end
 
-    action = params[:action].to_s.downcase
+    action = (params[:decision].presence || params[:verification_action]).to_s.downcase
 
     unless %w[verify reject].include?(action)
       return render json: {
@@ -347,7 +354,7 @@ class Api::V1::TasksController < Api::V1::BaseController
 
     render json: {
       success: true,
-      message: "Submission #{action}d",
+      message: action == "verify" ? "Submission verified" : "Submission rejected",
       submission: serialize_submission(submission)
     }, status: :ok
   end
@@ -380,11 +387,6 @@ class Api::V1::TasksController < Api::V1::BaseController
     end
   end
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 20).to_i, 50].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def serialize_task(task, member: nil)
     submission = member ? TaskSubmissionStatus.find_by(task_id: task.id, member_id: member.id) : nil

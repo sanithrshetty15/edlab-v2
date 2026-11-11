@@ -282,11 +282,6 @@ class Api::V1::AttendanceController < Api::V1::BaseController
     scope
   end
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 50).to_i, 200].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def today_summary(scope)
     {
@@ -318,7 +313,8 @@ class Api::V1::AttendanceController < Api::V1::BaseController
 
   def serialize_attendance_full(attendance)
     serialize_attendance(attendance).merge(
-      updated_at: attendance.updated_at
+      updated_at: attendance.updated_at,
+      duration_minutes: attendance.duration_minutes
     )
   end
 

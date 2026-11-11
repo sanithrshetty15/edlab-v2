@@ -19,6 +19,23 @@ export const authApi = {
       new_password: newPassword,
       password_confirmation: passwordConfirmation,
     }),
+  requestPasswordReset: ({ loginId }) =>
+    api.post(
+      `${BASE}/auth/password-reset/request`,
+      { login_id: loginId, delivery_method: "email" },
+      { auth: false },
+    ),
+  completePasswordReset: ({ loginId, otpCode, newPassword, passwordConfirmation }) =>
+    api.post(
+      `${BASE}/auth/password-reset/complete`,
+      {
+        login_id: loginId,
+        otp: otpCode,
+        new_password: newPassword,
+        password_confirmation: passwordConfirmation,
+      },
+      { auth: false },
+    ),
 };
 
 export const membersApi = {
@@ -29,6 +46,7 @@ export const membersApi = {
 
 export const membersManagementApi = {
   list: (params) => api.get(`${BASE}/members-management`, { query: params }),
+  create: (payload) => api.post(`${BASE}/members-management`, payload),
   get: (id) => api.get(`${BASE}/members-management/${id}`),
   updateStatus: (id, status) =>
     api.patch(`${BASE}/members-management/${id}/status`, { status }),

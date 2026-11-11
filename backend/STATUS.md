@@ -1,6 +1,43 @@
 # Edwins Lab Backend — STATUS
 
-_Last updated: 2026-11-05 (read-only code inspection; no files modified except this status update)._
+_Last updated: 2026-11-11._
+
+## Authentication access changes (2026-11-11)
+
+- Public member self-registration is disabled. `POST /api/v1/members/register`
+  now always returns HTTP 403 and does not create users or members.
+- Member creation moved behind admin authentication:
+  `POST /api/v1/members-management` requires an authenticated admin. Member
+  sessions receive HTTP 403 and unauthenticated requests receive HTTP 401.
+- The endpoint reuses `MemberRegistrationService` and writes a
+  `member_created_by_admin` audit log entry.
+- Verified with `test/integration/member_registration_access_test.rb`:
+  4 runs, 16 assertions, 0 failures. Live checks against the local API also
+  confirmed 403/401/201 behavior and successful member/admin logins.
+- Production API and deployment remain unverified because
+  `https://edwinslab.onrender.com` still returns HTTP 502.
+
+## Borrowing extension correction (2026-11-11)
+
+- Restored `POST /api/v1/borrowing/extension-request` and
+  `BorrowingController#request_extension`.
+- Added `db/migrate/20261111200000_create_extension_requests.rb` plus the
+  `BorrowRecord#extension_request` and `ExtensionRequest#member` associations.
+  The migration has been applied to the local development and test databases;
+  production has not been migrated or verified.
+- `request_extension` accepts an optional `requested_return_date` (defaults to
+  14 days from today) and rejects non-overdue borrow records, missing reasons,
+  invalid dates, and dates that are not after the current due date.
+- `serialize_extension_request` is restored, and the full borrow-record
+  serializer now includes the extension request when present.
+- Removed the global `rescue_from StandardError` handler while retaining the
+  specific `RecordNotFound` and `RecordInvalid` handlers.
+- Verified with `bin/rails routes -g borrowing`:
+  `POST /api/v1/borrowing/extension-request` maps to
+  `api/v1/borrowing#request_extension`.
+- Full Rails test suite: 6 runs, 0 failures, including
+  `test/integration/borrowing_extension_test.rb`.
+- Changes remain uncommitted; nothing was committed or pushed.
 
 ## Background job architecture (current state)
 

@@ -35,7 +35,7 @@ function stateFromSession(session) {
 }
 
 async function resolveSession() {
-  const token = tokenStore.get();
+  const token = await tokenStore.load();
   if (!token) return { status: "unauthenticated" };
 
   try {
@@ -57,9 +57,7 @@ async function resolveSession() {
 }
 
 export function AuthProvider({ children }) {
-  const [state, setState] = useState(() =>
-    tokenStore.get() ? initialState : { ...initialState, status: "unauthenticated" },
-  );
+  const [state, setState] = useState(initialState);
 
   const loadCurrentUser = useCallback(async () => {
     const session = await resolveSession();
@@ -108,7 +106,7 @@ export function AuthProvider({ children }) {
       throw new Error("The server did not return a session token.");
     }
 
-    tokenStore.set(data.token);
+    await tokenStore.set(data.token);
 
     try {
       const me = await authApi.me();
@@ -160,7 +158,7 @@ export function AuthProvider({ children }) {
     } catch {
       // The local session is cleared even if the server is unreachable.
     } finally {
-      tokenStore.clear();
+      await tokenStore.clear();
       setState({ ...initialState, status: "unauthenticated" });
     }
   }, []);

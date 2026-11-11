@@ -68,9 +68,9 @@ function AttendancePreview({ resource }) {
               {!record.exit_time && <Badge tone="accent">In lab</Badge>}
             </div>
             <p>
-              {formatClockTime(record.entry_time?.slice(11, 16) || record.entry_time)} in
+              {formatClockTime(record.entry_time)} in
               {record.exit_time
-                ? ` · ${formatClockTime(record.exit_time?.slice(11, 16) || record.exit_time)} out`
+                ? ` · ${formatClockTime(record.exit_time)} out`
                 : " · session open"}
             </p>
           </div>

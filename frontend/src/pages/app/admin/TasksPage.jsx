@@ -331,7 +331,7 @@ function VerifySubmissionDialog({ task, members, onClose, onVerified }) {
     setSaving(true);
     setFormError(null);
     try {
-      const result = await tasksApi.verify(task.id, { member_id: memberId, action });
+      const result = await tasksApi.verify(task.id, { member_id: memberId, decision: action });
       onVerified(result);
       onClose();
     } catch (error) {

@@ -1,7 +1,7 @@
 class Api::V1::BorrowingController < Api::V1::BaseController
   before_action :authenticate_user!
   before_action :require_password_change_completed!
-  before_action :set_borrow_record, only: [:show, :approve_approval, :reject_request]
+  before_action :set_borrow_record, only: [:show, :approve, :reject]
 
   # GET /api/v1/borrowing/requests
   def index
@@ -24,7 +24,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
 
     render json: {
       success: true,
-      requests: records.map { |r| serialize_borrow_record(r) },
+      requests: records.items.map { |r| serialize_borrow_record(r) },
       pagination: {
         page: records.current_page,
         per_page: records.per_page,
@@ -91,15 +91,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
       }, status: :conflict
     end
 
-    semester = Semester.current
-    unless semester
-      return render json: {
-        success: false,
-        message: "No current semester configured"
-      }, status: :internal_server_error
-    end
-
-    due_date = semester.end_date
+    due_date = Semester.current&.end_date || 14.days.from_now.to_date
 
     idempotency_key = SecureRandom.uuid
 
@@ -127,7 +119,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
         request: serialize_borrow_record(borrow_record)
       }, status: :created
     rescue ActiveRecord::RecordInvalid => e
-      InventoryItem.increment_counter(:available_quantity, item_id)
+      InventoryItem.increment_counter(:available_quantity, item_id, by: quantity)
       render json: {
         success: false,
         message: e.message
@@ -199,6 +191,9 @@ class Api::V1::BorrowingController < Api::V1::BaseController
         status: "rejected",
         approval_reason: reason
       )
+      item = @borrow_record.inventory_item
+      restored = [item.available_quantity + @borrow_record.quantity, item.total_quantity].min
+      item.update!(available_quantity: restored)
     end
 
     AuditLogService.log_borrow_rejected(
@@ -208,7 +203,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
       ip_address: request.remote_ip
     )
 
-    NotificationService.notify_borrow_request(@borrow_record, requested_by: current_user)
+    NotificationService.notify_borrow_rejected(@borrow_record, rejected_by: current_user, reason: reason)
 
     render json: {
       success: true,
@@ -225,14 +220,14 @@ class Api::V1::BorrowingController < Api::V1::BaseController
     borrow_record_id = params[:borrow_record_id].to_i
     reason = params[:reason].to_s.strip
 
-    unless borrow_record_id.present?
+    unless borrow_record_id.positive?
       return render json: {
         success: false,
         message: "Borrow record ID is required"
       }, status: :unprocessable_entity
     end
 
-    borrow_record = BorrowRecord.find_by(
+    borrow_record = BorrowRecord.includes(:inventory_item).find_by(
       id: borrow_record_id,
       member_id: member.id,
       status: "approved"
@@ -252,10 +247,39 @@ class Api::V1::BorrowingController < Api::V1::BaseController
       }, status: :unprocessable_entity
     end
 
+    if reason.blank?
+      return render json: {
+        success: false,
+        message: "Reason is required"
+      }, status: :unprocessable_entity
+    end
+
+    requested_return_date =
+      if params[:requested_return_date].present?
+        begin
+          Date.parse(params[:requested_return_date].to_s)
+        rescue Date::Error
+          return render json: {
+            success: false,
+            message: "Requested return date is invalid"
+          }, status: :unprocessable_entity
+        end
+      else
+        Date.current + 14.days
+      end
+
+    if requested_return_date <= borrow_record.due_date
+      return render json: {
+        success: false,
+        message: "Requested return date must be after the current due date"
+      }, status: :unprocessable_entity
+    end
+
     extension = borrow_record.extension_request || ExtensionRequest.create!(
       borrow_record_id: borrow_record.id,
       member_id: member.id,
-      reason: reason.presence,
+      requested_return_date: requested_return_date,
+      reason: reason,
       status: "pending"
     )
 
@@ -267,6 +291,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
       details: {
         item_name: borrow_record.inventory_item.name,
         current_due_date: borrow_record.due_date.to_s,
+        requested_return_date: extension.requested_return_date.to_s,
         reason: reason
       },
       ip_address: request.remote_ip
@@ -311,7 +336,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
 
     render json: {
       success: true,
-      requests: records.map { |r| serialize_borrow_record_admin(r) },
+      requests: records.items.map { |r| serialize_borrow_record_admin(r) },
       pagination: {
         page: records.current_page,
         per_page: records.per_page,
@@ -325,7 +350,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
   private
 
   def set_borrow_record
-    @borrow_record = BorrowRecord.includes(:member, :inventory_item, :approved_by)
+    @borrow_record = BorrowRecord.includes(:member, :inventory_item, :approved_by, :extension_request)
       .find(params[:id])
   rescue ActiveRecord::RecordNotFound
     render json: {
@@ -334,11 +359,6 @@ class Api::V1::BorrowingController < Api::V1::BaseController
     }, status: :not_found
   end
 
-  def paginate(scope)
-    page = (params[:page] || 1).to_i
-    per_page = [[(params[:per_page] || 20).to_i, 100].min, 1].max
-    scope.page(page).per(per_page)
-  end
 
   def serialize_borrow_record(borrow)
     {
@@ -361,7 +381,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
       purpose: borrow.approval_reason,
       approved_by: borrow.approved_by&.email,
       approval_reason: borrow.approval_reason,
-      extension_request: borrow.extension_request
+      extension_request: borrow.extension_request && serialize_extension_request(borrow.extension_request)
     )
   end
 
@@ -395,6 +415,7 @@ class Api::V1::BorrowingController < Api::V1::BaseController
       id: extension.id,
       borrow_record_id: extension.borrow_record_id,
       status: extension.status,
+      requested_return_date: extension.requested_return_date.to_s,
       reason: extension.reason,
       created_at: extension.created_at
     }

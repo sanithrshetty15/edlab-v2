@@ -227,8 +227,8 @@ function AttendanceHistory({ resource }) {
         </thead>
         <tbody>
           {records.map((record) => {
-            const entry = record.entry_time?.slice(11, 16) || record.entry_time;
-            const exit = record.exit_time?.slice(11, 16) || record.exit_time;
+            const entry = record.entry_time;
+            const exit = record.exit_time;
             let duration = "—";
             if (record.entry_time && record.exit_time) {
               const minutes = Math.max(
