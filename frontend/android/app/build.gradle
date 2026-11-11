@@ -16,10 +16,41 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    // Release signing configuration
+    // To build a signed release APK:
+    // 1. Create a keystore: keytool -genkey -v -keystore edwinslab-release.keystore -alias edwinslab -keyalg RSA -keysize 2048 -validity 9125
+    // 2. Store the keystore outside the repository
+    // 3. Configure environment variables: ANDROID_KEYSTORE_PATH, ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+    // 4. Run: ./gradlew assembleRelease
+
+    // Configure signing via signingConfigs block
+    // Store keystore outside repository and set env vars:
+    // ANDROID_KEYSTORE_PATH=path/to/edwinslab-release.keystore
+    // ANDROID_KEYSTORE_PASSWORD=your_keystore_password
+    // ANDROID_KEY_ALIAS=alias_name
+    // ANDROID_KEY_PASSWORD=key_password
+    // Note: These must be set via environment variables for release builds.
+    // The keystore file must NOT be committed to the repository.
+    signingConfigs {
+        release {
+            // Use project property or environment variable for keystore path
+            // If ANDROID_KEYSTORE_PATH is not set, release builds will fail
+            // which is intentional - prevents accidental unconfigured releases
+            storeFile file(System.getenv("ANDROID_KEYSTORE_PATH"))
+            storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            keyAlias System.getenv("ANDROID_KEY_ALIAS")
+            keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+        debug {
+            signingConfig signingConfigs.debug
         }
     }
 }

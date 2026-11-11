@@ -31,3 +31,20 @@
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+# Ignore compiled binaries (build during deployment, never commit)
+/edwinslab-api
+/*.exe
+/build/
+/dist/
+
+# IDE / editor
+/.idea/
+/*.swp
+/*.swo
+*~
+.project
+.classpath
+.settings/
+.vscode/
+*.sublime-*
+

@@ -1,0 +1,39 @@
+# Edwins Lab — Render Deployment Configuration
+# ==============================================
+# DO NOT EDIT: This file is managed by the Edwins Lab deployment process.
+# Changes require review by the deployment owner.
+
+services:
+  - type: web
+    name: edwinslab-api
+    env: docker
+    plan: free
+    buildCommand: "cd backend && go mod download && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w -extldflags \"-static\"' -o edwinslab-api ./cmd/api"
+    startCommand: "./edwinslab-api"
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SESSION_SECRET
+        sync: false
+      - key: ADMIN_ONE_PASSWORD
+        sync: false
+      - key: ADMIN_TWO_PASSWORD
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RATE_LIMIT_REQUESTS
+        value: 100
+      - key: RATE_LIMIT_PERIOD_SECONDS
+        value: 60
+      - key: SESSION_TTL_SECONDS
+        value: 86400
+    disk:
+      name: edwinslab-data
+      mountPath: /app/data
+      size: 100
