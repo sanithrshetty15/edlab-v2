@@ -1,10 +1,9 @@
 import { useEffect, useRef } from 'react'
-import { gsap } from 'gsap'
+import { motion, AnimatePresence } from 'motion/react'
 import logo from '../../assets/images/edwins-lab-logo.png'
 import { prefersReducedMotion } from '../../utils/reducedMotion'
 
 const LOGO_WIDTH = 'w-[min(90vw,52rem,138vh)]'
-const TEXT_ONLY_CLIP = { clipPath: 'inset(0 0 0 33%)' }
 
 function LogoImage({ textOnly = false, alt = '' }) {
   return (
@@ -14,114 +13,133 @@ function LogoImage({ textOnly = false, alt = '' }) {
       draggable="false"
       decoding="async"
       className="block h-auto w-full select-none"
-      style={textOnly ? TEXT_ONLY_CLIP : undefined}
+      style={textOnly ? { clipPath: 'inset(0 0 0 33%)' } : undefined}
       aria-hidden={textOnly ? 'true' : undefined}
     />
   )
 }
 
+const STAIRCASE_DURATION = 1800
+const TOP_STAGGER = 55
+const BOTTOM_STAGGER = 48
+
 export default function IntroAnimation({ onComplete, onRevealStart }) {
-  const overlayRef = useRef(null)
-  const fullLogoRef = useRef(null)
-  const portraitMaskRef = useRef(null)
-  const topPanelRef = useRef(null)
-  const bottomPanelRef = useRef(null)
-  const topMarkRef = useRef(null)
-  const bottomMarkRef = useRef(null)
+  const containerRef = useRef(null)
 
   useEffect(() => {
-    if (!overlayRef.current) return undefined
+    if (!containerRef.current) return undefined
 
     if (prefersReducedMotion()) {
       onComplete?.()
       return undefined
     }
 
-    let ctx
+    const handleRevealStart = () => onRevealStart?.()
+    window.addEventListener('edwins:site-reveal', handleRevealStart)
 
-    try {
-      ctx = gsap.context(() => {
-        const tl = gsap.timeline({
-          defaults: { ease: 'power3.out' },
-          onComplete: () => onComplete?.(),
-        })
-
-        tl.fromTo(
-          fullLogoRef.current,
-          { autoAlpha: 0, scale: 0.96, y: 12 },
-          { autoAlpha: 1, scale: 1, y: 0, duration: 1, ease: 'power2.out' },
-          0.2,
-        )
-          .to(
-            portraitMaskRef.current,
-            { autoAlpha: 1, duration: 0.8, ease: 'power2.inOut' },
-            '+=0.3',
-          )
-          .addLabel('split', '+=0.3')
-          .call(() => onRevealStart?.(), [], 'split')
-          .set(fullLogoRef.current, { autoAlpha: 0 }, 'split')
-          .set([topMarkRef.current, bottomMarkRef.current], { autoAlpha: 1 }, 'split')
-          .to(
-            topPanelRef.current,
-            { yPercent: -100, duration: 1.15, ease: 'power4.inOut' },
-            'split',
-          )
-          .to(
-            bottomPanelRef.current,
-            { yPercent: 100, duration: 1.15, ease: 'power4.inOut' },
-            'split',
-          )
-      }, overlayRef)
-    } catch {
-      onComplete?.()
-      return undefined
-    }
-
-    return () => ctx.revert()
+    return () => window.removeEventListener('edwins:site-reveal', handleRevealStart)
   }, [onComplete, onRevealStart])
 
   return (
-    <div
-      ref={overlayRef}
-      className="fixed inset-0 z-[100] overflow-hidden"
-      role="presentation"
-    >
+    <AnimatePresence>
       <div
-        ref={topPanelRef}
-        className="absolute inset-x-0 top-0 h-1/2 overflow-hidden bg-white"
+        ref={containerRef}
+        className="fixed inset-0 z-[100] overflow-hidden bg-edwins-dark"
+        role="presentation"
       >
-        <div
-          className={`absolute left-1/2 top-full -translate-x-1/2 -translate-y-1/2 ${LOGO_WIDTH}`}
+        {/* Centered logo + text - visible initially, fades when reveal starts */}
+        <motion.div
+          className="pointer-events-none absolute inset-0 grid place-items-center"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut' }}
+          onAnimationComplete={() => onRevealStart?.()}
         >
-          <div ref={topMarkRef} className="opacity-0">
-            <LogoImage textOnly />
+          <div className={`relative opacity-0 ${LOGO_WIDTH}`}>
+            <LogoImage alt="Edwins Lab" />
           </div>
-        </div>
-      </div>
+        </motion.div>
 
-      <div
-        ref={bottomPanelRef}
-        className="absolute inset-x-0 bottom-0 h-1/2 overflow-hidden bg-white"
-      >
-        <div
-          className={`absolute left-1/2 top-0 -translate-x-1/2 -translate-y-1/2 ${LOGO_WIDTH}`}
-        >
-          <div ref={bottomMarkRef} className="opacity-0">
-            <LogoImage textOnly />
-          </div>
+        {/* Top staircase panels - fall downward */}
+        <div className="absolute inset-x-0 top-0 overflow-hidden">
+          {Array.from({ length: 14 }).map((_, i) => {
+            const delay = i * TOP_STAGGER
+            const panelHeight = 180 + (i % 3) * 40
+            const isWide = i % 2 === 0
+            return (
+              <motion.div
+                key={`top-${i}`}
+                className="absolute inset-x-0 bg-edwins-dark"
+                style={{ height: `${panelHeight}px` }}
+                initial={{
+                  y: '-100%',
+                  opacity: 0.92,
+                }}
+                animate={{
+                  y: '100%',
+                  opacity: 0,
+                }}
+                transition={{
+                  duration: STAIRCASE_DURATION / 1000,
+                  delay: delay / 1000,
+                  ease: 'easeOut',
+                  opacity: { duration: 0.3, delay: (delay + 300) / 1000 },
+                }}
+                style={{
+                  ...((isWide ? { width: '100%' } : { maxWidth: '70%', left: '15%' })),
+                }}
+              />
+            )
+          })}
         </div>
-      </div>
 
-      <div className="pointer-events-none absolute inset-0 grid place-items-center">
-        <div ref={fullLogoRef} className={`relative opacity-0 ${LOGO_WIDTH}`}>
-          <LogoImage alt="Edwins Lab" />
-          <div
-            ref={portraitMaskRef}
-            className="absolute inset-y-0 left-0 w-[33%] bg-white opacity-0"
-            aria-hidden="true"
-          />
+        {/* Bottom staircase panels - rise upward */}
+        <div className="absolute inset-x-0 bottom-0 overflow-hidden">
+          {Array.from({ length: 12 }).map((_, i) => {
+            const delay = i * BOTTOM_STAGGER + 200
+            const panelHeight = 160 + (i % 4) * 30
+            const isWide = i % 3 === 0
+            return (
+              <motion.div
+                key={`bottom-${i}`}
+                className="absolute inset-x-0 bg-edwins-dark"
+                style={{ height: `${panelHeight}px` }}
+                initial={{
+                  y: '100%',
+                  opacity: 0.92,
+                }}
+                animate={{
+                  y: '-100%',
+                  opacity: 0,
+                }}
+                transition={{
+                  duration: STAIRCASE_DURATION / 1000,
+                  delay: delay / 1000,
+                  ease: 'easeOut',
+                  opacity: { duration: 0.3, delay: (delay + 300) / 1000 },
+                }}
+                style={{
+                  ...(isWide
+                    ? { width: '100%' }
+                    : { maxWidth: '65%', right: '17%' }),
+                }}
+              />
+            )
+          })}
         </div>
+
+        {/* Complete the transition */}
+        <motion.div
+          className="absolute inset-0"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{
+            duration: 0.1,
+            delay: (14 * TOP_STAGGER + 12 * BOTTOM_STAGGER + 400) / 1000,
+          }}
+          onAnimationComplete={() => onComplete?.()}
+        />
       </div>
-    </div>
+    </AnimatePresence>
   )
 }

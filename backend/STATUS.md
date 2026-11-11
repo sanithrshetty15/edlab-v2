@@ -172,6 +172,20 @@ Both provisioned via secure bootstrap mechanism once `ADMIN_ONE_PASSWORD` and `A
 
 **Security:** `RATE_LIMIT_REQUESTS`, `RATE_LIMIT_PERIOD_SECONDS`, `SESSION_TTL_SECONDS`
 
+## Frontend — Intro Animation Update
+
+- **Previous transition removed:** Vertical center-split GSAP animation in
+  `IntroAnimation.jsx` completely removed.
+- **New animation:** Double staircase preloader using Motion for React
+  (`motion/react`). 14 top panels fall down (55 ms stagger), 12 bottom panels
+  rise up (48 ms stagger + 200 ms offset). Total duration ~1.8 s.
+- **Library:** `motion` package installed via `npm install motion`.
+- **Component:** `src/components/intro/IntroAnimation.jsx` rewritten.
+- **Reduced motion:** Respected — intro skipped when user prefers reduced motion.
+- **Build:** `npm run build` passes. **Lint:** 0 errors, 1 pre-existing warning.
+- **Verification:** Headless Chromium confirmed overlay mounts, both staircase
+  containers render, main content revealed after transition, overlay removed.
+
 ## Final Status Summary
 
 | Category | Status |

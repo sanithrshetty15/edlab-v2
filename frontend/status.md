@@ -2,6 +2,30 @@
 
 _Last updated: 2026-11-11._
 
+## Latest update — double staircase intro animation
+
+- Replaced the existing vertical center-split intro transition with an advanced
+  double staircase preloader built with Motion for React (`motion/react`).
+- The old `IntroAnimation.jsx` (GSAP-based vertical split with two white
+  half-screens) is completely removed and replaced.
+- New animation: 14 top staircase panels fall downward from the top edge with a
+  55 ms stagger; 12 bottom staircase panels rise upward from the bottom edge with
+  a 48 ms stagger and a 200 ms head start. Both staircases use `easeOut` and a
+  ~1.8 s total duration, coordinated to cover the screen and reveal the site.
+- The intro content (logo/wordmark) fades out when the reveal trigger fires;
+  panels animate in opposite directions toward the center; the website is revealed
+  only after all panels complete, via `onAnimationComplete`.
+- Motion for React was installed (`npm install motion`) and is declared in
+  `package.json` dependencies. `gorm.io/datatypes` not involved — this is a
+  frontend change only.
+- `prefers-reduced-motion` is respected: the intro is skipped entirely when the
+  user prefers reduced motion.
+- Build: `npm run build` passes (73 modules, 389ms). Lint: 0 errors, 1 pre-existing
+  unrelated hook warning in `InteractiveContourField.jsx`.
+- Verified via headless Chromium: intro overlay mounts, top and bottom staircase
+  containers render, website content (`main#main`) becomes visible after the
+  transition, and the overlay is removed cleanly. No console errors.
+
 ## Latest update — authentication access
 
 - The public website navbar no longer has Sign in or Download app controls, and
@@ -24,9 +48,11 @@ _Last updated: 2026-11-11._
 
 ## Current state
 
-- Branded intro completed in `src/components/intro/Intro.jsx`: lime panel
-  rises to black, reveals the `Edwins Lab` logo/wordmark, holds, then
-  dissolves into the site and reveals the main content.
+- Intro transition is now the Motion for React double staircase preloader in
+  `src/components/intro/IntroAnimation.jsx`. The old GSAP vertical center-split
+  animation has been removed entirely. Intro.jsx remains the orchestration layer
+  (mounts IntroAnimation, handles reveal event, fades site content in, ensures
+  intro only plays once on initial load).
 - Navbar restored as the second step after intro: fixed pill navigation with
   `EDWINS LAB` wordmark and About/Linux/Testimonials/Download/Contact links.
   The selected/active section is shown as a black pill (Hero shows no extra
