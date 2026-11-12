@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/lib/pq"
 	"gorm.io/datatypes"
 )
 
@@ -19,46 +20,46 @@ type User struct {
 	UpdatedAt      time.Time `json:"updated_at"`
 
 	// Relations
-	Member *Member `gorm:"foreignKey:UserID" json:"member,omitempty"`
-	Admin  *Admin  `gorm:"foreignKey:UserID" json:"admin,omitempty"`
+	Member   *Member   `gorm:"foreignKey:UserID" json:"member,omitempty"`
+	Admin    *Admin    `gorm:"foreignKey:UserID" json:"admin,omitempty"`
 	Sessions []Session `gorm:"foreignKey:UserID" json:"-"`
 }
 
 // Member represents a student/lab member
 type Member struct {
-	ID                 int64     `gorm:"primaryKey" json:"id"`
-	UserID             int64     `json:"user_id"`
-	Name               string    `gorm:"not null" json:"name"`
-	USN                *string   `json:"usn,omitempty"` // University Seat Number
-	RollNumber         *string   `json:"roll_number,omitempty"`
-	LoginID            string    `gorm:"not null;uniqueIndex" json:"login_id"`
-	AcademicYear       int       `json:"academic_year"`
-	Branch             string    `gorm:"not null" json:"branch"`
-	Section            *string   `json:"section,omitempty"`
-	Email              string    `gorm:"not null" json:"email"`
-	Phone              string    `json:"phone,omitempty"`
-	PhoneVerified      bool      `gorm:"default:false" json:"phone_verified"`
-	MustChangePassword bool      `gorm:"default:true" json:"must_change_password"`
-	LoginIDChanged     bool      `gorm:"default:false" json:"login_id_changed"`
-	LoginIDChangedAt   *time.Time `json:"login_id_changed_at,omitempty"`
-	Status             string    `gorm:"default:'active'" json:"status"`
-	GitHubURL          *string   `json:"github_url,omitempty"`
-	LinkedInURL        *string   `json:"linkedin_url,omitempty"`
-	PortfolioURL       *string   `json:"portfolio_url,omitempty"`
-	Bio                *string   `json:"bio,omitempty"`
-	Interests          string     `json:"interests,omitempty" gorm:"type:varchar(500)"`
-	DeletedAt          *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
-	UpdatedAt          time.Time  `json:"updated_at"`
+	ID                 int64          `gorm:"primaryKey" json:"id"`
+	UserID             int64          `json:"user_id"`
+	Name               string         `gorm:"not null" json:"name"`
+	USN                *string        `json:"usn,omitempty"` // University Seat Number
+	RollNumber         *string        `json:"roll_number,omitempty"`
+	LoginID            string         `gorm:"not null;uniqueIndex" json:"login_id"`
+	AcademicYear       int            `json:"academic_year"`
+	Branch             string         `gorm:"not null" json:"branch"`
+	Section            *string        `json:"section,omitempty"`
+	Email              string         `gorm:"not null" json:"email"`
+	Phone              string         `json:"phone,omitempty"`
+	PhoneVerified      bool           `gorm:"default:false" json:"phone_verified"`
+	MustChangePassword bool           `gorm:"default:true" json:"must_change_password"`
+	LoginIDChanged     bool           `gorm:"default:false" json:"login_id_changed"`
+	LoginIDChangedAt   *time.Time     `json:"login_id_changed_at,omitempty"`
+	Status             string         `gorm:"default:'active'" json:"status"`
+	GitHubURL          *string        `gorm:"column:github_url" json:"github_url,omitempty"`
+	LinkedInURL        *string        `gorm:"column:linkedin_url" json:"linkedin_url,omitempty"`
+	PortfolioURL       *string        `json:"portfolio_url,omitempty"`
+	Bio                *string        `json:"bio,omitempty"`
+	Interests          pq.StringArray `json:"interests" gorm:"type:text[]"`
+	DeletedAt          *time.Time     `json:"deleted_at,omitempty"`
+	CreatedAt          time.Time      `json:"created_at"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 
 	// Relations
-	User      User              `gorm:"foreignKey:UserID" json:"-"`
-	AttendanceLogs []AttendanceLog `gorm:"foreignKey:MemberID" json:"-"`
-	BorrowRecords []BorrowRecord `gorm:"foreignKey:MemberID" json:"-"`
-	ExtensionRequests []ExtensionRequest `gorm:"foreignKey:MemberID" json:"-"`
-	ReturnRequests []ReturnRequest `gorm:"foreignKey:MemberID" json:"-"`
+	User                   User                   `gorm:"foreignKey:UserID" json:"-"`
+	AttendanceLogs         []AttendanceLog        `gorm:"foreignKey:MemberID" json:"-"`
+	BorrowRecords          []BorrowRecord         `gorm:"foreignKey:MemberID" json:"-"`
+	ExtensionRequests      []ExtensionRequest     `gorm:"foreignKey:MemberID" json:"-"`
+	ReturnRequests         []ReturnRequest        `gorm:"foreignKey:MemberID" json:"-"`
 	TaskSubmissionStatuses []TaskSubmissionStatus `gorm:"foreignKey:MemberID" json:"-"`
-	GroupMessages []GroupMessage `gorm:"foreignKey:UserID" json:"-"`
+	GroupMessages          []GroupMessage         `gorm:"foreignKey:UserID" json:"-"`
 }
 
 // Admin represents a lab administrator
@@ -76,15 +77,15 @@ type Admin struct {
 
 // Session represents an authenticated session
 type Session struct {
-	ID           int64     `gorm:"primaryKey" json:"-"`
-	UserID       int64     `json:"-"`
-	TokenDigest  string    `gorm:"not null;uniqueIndex" json:"-"`
-	IPAddress    *string   `json:"ip_address,omitempty"`
-	UserAgent    *string   `json:"user_agent,omitempty"`
-	LastActiveAt time.Time `json:"last_active_at"`
+	ID           int64      `gorm:"primaryKey" json:"-"`
+	UserID       int64      `json:"-"`
+	TokenDigest  string     `gorm:"not null;uniqueIndex" json:"-"`
+	IPAddress    *string    `json:"ip_address,omitempty"`
+	UserAgent    *string    `json:"user_agent,omitempty"`
+	LastActiveAt time.Time  `json:"last_active_at"`
 	ExpiresAt    *time.Time `json:"expires_at,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
 // OTPCode represents a one-time password for verification
@@ -106,26 +107,29 @@ type BiometricEnrollment struct {
 	ID                   int64     `gorm:"primaryKey" json:"id"`
 	MemberID             int64     `json:"member_id"`
 	DeviceRegistrationID int64     `json:"device_registration_id"`
-	DeviceUserID         string    `json:"device_user_id"` // Device-internal template identifier
+	DeviceUserID         string    `json:"device_user_id"`                  // Device-internal template identifier
 	Status               string    `gorm:"default:'pending'" json:"status"` // pending, enrolled, verified
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
 
 	// Relations
-	Member      Member `gorm:"foreignKey:MemberID" json:"-"`
+	Member             Member             `gorm:"foreignKey:MemberID" json:"-"`
 	DeviceRegistration DeviceRegistration `gorm:"foreignKey:DeviceRegistrationID" json:"-"`
 }
 
 // DeviceRegistration represents a fingerprint/biometric device registration
 type DeviceRegistration struct {
-	ID           int64     `gorm:"primaryKey" json:"id"`
-	Name         string    `gorm:"not null" json:"name"`
-	DeviceType   string    `gorm:"not null" json:"device_type"` // r307s, esp32, etc.
-	APIKeyDigest string    `gorm:"not null;uniqueIndex" json:"-"`
-	Status       string    `gorm:"default:'active'" json:"status"` // active, inactive, revoked
+	ID           int64      `gorm:"primaryKey" json:"id"`
+	DeviceUID    string     `gorm:"not null;uniqueIndex" json:"device_uid"`
+	Name         string     `gorm:"not null" json:"name"`
+	DeviceType   string     `gorm:"not null" json:"device_type"` // r307s, esp32, etc.
+	APIKeyDigest string     `gorm:"not null;uniqueIndex" json:"-"`
+	Status       string     `gorm:"default:'active'" json:"status"` // active, inactive, revoked
+	TokenVersion int        `gorm:"not null;default:0" json:"-"`
+	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
 	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 
 	// Relations
 	BiometricEnrollments []BiometricEnrollment `gorm:"foreignKey:DeviceRegistrationID" json:"-"`
@@ -133,18 +137,18 @@ type DeviceRegistration struct {
 
 // DeviceEvent represents a fingerprint scan or device event
 type DeviceEvent struct {
-	ID                   int64     `gorm:"primaryKey" json:"id"`
-	DeviceRegistrationID int64     `json:"device_registration_id"`
-	EventType            string    `gorm:"not null" json:"event_type"` // check_in, check_out, enrollment, verification
-	IdempotencyKey       string    `gorm:"not null;uniqueIndex" json:"idempotency_key"`
-	MemberIdentifier     *string   `json:"member_identifier,omitempty"`
-	HMACSignature        *string   `json:"-"` // Internal use only
-	EventTimestamp       time.Time `json:"event_timestamp"`
+	ID                   int64           `gorm:"primaryKey" json:"id"`
+	DeviceRegistrationID int64           `json:"device_registration_id"`
+	EventType            string          `gorm:"not null" json:"event_type"` // check_in, check_out, enrollment, verification
+	IdempotencyKey       string          `gorm:"not null;uniqueIndex" json:"idempotency_key"`
+	MemberIdentifier     *string         `json:"member_identifier,omitempty"`
+	HMACSignature        *string         `json:"-"` // Internal use only
+	EventTimestamp       time.Time       `json:"event_timestamp"`
 	Payload              json.RawMessage `json:"payload,omitempty" gorm:"type:jsonb"`
-	ProcessingStatus     string    `gorm:"default:'pending'" json:"processing_status"` // pending, processed, failed
-	ProcessingError      *string   `json:"processing_error,omitempty"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ProcessingStatus     string          `gorm:"default:'pending'" json:"processing_status"` // pending, processed, failed
+	ProcessingError      *string         `json:"processing_error,omitempty"`
+	CreatedAt            time.Time       `json:"created_at"`
+	UpdatedAt            time.Time       `json:"updated_at"`
 
 	// Relations
 	DeviceRegistration DeviceRegistration `gorm:"foreignKey:DeviceRegistrationID" json:"-"`
@@ -152,16 +156,16 @@ type DeviceEvent struct {
 
 // AttendanceLog represents a member's attendance record
 type AttendanceLog struct {
-	ID              int64     `gorm:"primaryKey" json:"id"`
-	MemberID        int64     `json:"member_id"`
-	EntryDate       time.Time `gorm:"type:date" json:"entry_date"`
-	EntryTime       time.Time `json:"entry_time"`
+	ID              int64      `gorm:"primaryKey" json:"id"`
+	MemberID        int64      `json:"member_id"`
+	EntryDate       time.Time  `gorm:"type:date" json:"entry_date"`
+	EntryTime       time.Time  `json:"entry_time"`
 	ExitTime        *time.Time `json:"exit_time,omitempty"`
-	Source          string    `gorm:"default:'manual'" json:"source"` // manual, device, web
-	DeviceReference *string   `json:"device_reference,omitempty"`
-	CreatedByID     *int64    `json:"created_by_id,omitempty"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	Source          string     `gorm:"default:'manual'" json:"source"` // manual, device, web
+	DeviceReference *string    `json:"device_reference,omitempty"`
+	CreatedByID     *int64     `json:"created_by_id,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
 
 	// Relations
 	Member Member `gorm:"foreignKey:MemberID" json:"-"`
@@ -169,20 +173,20 @@ type AttendanceLog struct {
 
 // Announcement represents a lab announcement
 type Announcement struct {
-	ID          int64     `gorm:"primaryKey" json:"id"`
-	Title       string    `gorm:"not null" json:"title"`
-	Content     string    `gorm:"type:text" json:"content"`
-	IsPinned    bool      `gorm:"default:false" json:"is_pinned"`
+	ID          int64      `gorm:"primaryKey" json:"id"`
+	Title       string     `gorm:"not null" json:"title"`
+	Content     string     `gorm:"type:text" json:"content"`
+	IsPinned    bool       `gorm:"default:false" json:"is_pinned"`
 	PublishedAt *time.Time `json:"published_at,omitempty"`
 	ScheduledAt *time.Time `json:"scheduled_at,omitempty"`
-	CreatedByID int64     `json:"created_by_id"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedByID int64      `json:"created_by_id"`
+	DeletedAt   *time.Time `json:"deleted_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 
 	// Relations
-	CreatedBy User `gorm:"foreignKey:CreatedByID" json:"-"`
-	Reads   []AnnouncementRead `gorm:"foreignKey:AnnouncementID" json:"-"`
+	CreatedBy User               `gorm:"foreignKey:CreatedByID" json:"-"`
+	Reads     []AnnouncementRead `gorm:"foreignKey:AnnouncementID" json:"-"`
 }
 
 // AnnouncementRead tracks which users have read an announcement
@@ -196,23 +200,23 @@ type AnnouncementRead struct {
 
 	// Relations
 	Announcement Announcement `gorm:"foreignKey:AnnouncementID" json:"-"`
-	User         User `gorm:"foreignKey:UserID" json:"-"`
+	User         User         `gorm:"foreignKey:UserID" json:"-"`
 }
 
 // Notification represents a notification for a user
 type Notification struct {
-	ID               int64     `gorm:"primaryKey" json:"id"`
-	UserID           int64     `json:"user_id"`
-	Title            string    `gorm:"not null" json:"title"`
-	Body             *string   `json:"body,omitempty"`
-	NotificationType string    `gorm:"not null;index" json:"notification_type"` // system, announcement, borrowing, etc.
-	SubjectType    *string     `json:"subject_type,omitempty"` // user, member, borrow_record, etc.
-	SubjectID      *int64    `json:"subject_id,omitempty"`
-	IsRead           bool      `gorm:"default:false" json:"is_read"`
+	ID               int64      `gorm:"primaryKey" json:"id"`
+	UserID           int64      `json:"user_id"`
+	Title            string     `gorm:"not null" json:"title"`
+	Body             *string    `json:"body,omitempty"`
+	NotificationType string     `gorm:"not null;index" json:"notification_type"` // system, announcement, borrowing, etc.
+	SubjectType      *string    `json:"subject_type,omitempty"`                  // user, member, borrow_record, etc.
+	SubjectID        *int64     `json:"subject_id,omitempty"`
+	IsRead           bool       `gorm:"default:false" json:"is_read"`
 	ReadAt           *time.Time `json:"read_at,omitempty"`
-	EmailStatus    *string   `json:"email_status,omitempty"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
+	EmailStatus      *string    `json:"email_status,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+	UpdatedAt        time.Time  `json:"updated_at"`
 
 	// Relations
 	User User `gorm:"foreignKey:UserID" json:"-"`
@@ -220,45 +224,69 @@ type Notification struct {
 
 // InventoryItem represents an item in the lab inventory
 type InventoryItem struct {
-	ID                int64     `gorm:"primaryKey" json:"id"`
-	Name              string    `gorm:"not null" json:"name"`
-	Category          string    `gorm:"not null" json:"category"`
-	Description       *string   `json:"description,omitempty"`
-	TotalQuantity     int       `gorm:"default:0" json:"total_quantity"`
-	AvailableQuantity int       `gorm:"default:0" json:"available_quantity"`
-	StorageLocation   *string   `json:"storage_location,omitempty"`
-	Condition         *string   `json:"condition,omitempty"`
-	IsActive          bool      `gorm:"default:true" json:"is_active"`
+	ID                int64      `gorm:"primaryKey" json:"id"`
+	Name              string     `gorm:"not null" json:"name"`
+	Category          string     `gorm:"not null" json:"category"`
+	Description       *string    `json:"description,omitempty"`
+	TotalQuantity     int        `gorm:"default:0" json:"total_quantity"`
+	AvailableQuantity int        `gorm:"default:0" json:"available_quantity"`
+	StorageLocation   *string    `json:"storage_location,omitempty"`
+	Condition         *string    `json:"condition,omitempty"`
+	IsActive          bool       `gorm:"default:true" json:"is_active"`
 	DeletedAt         *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 
 	// Relations
 	BorrowRecords []BorrowRecord `gorm:"foreignKey:InventoryItemID" json:"-"`
 }
 
+// Semester represents an academic semester window.
+type Semester struct {
+	ID        int64     `gorm:"primaryKey" json:"id"`
+	Name      string    `gorm:"not null" json:"name"`
+	StartDate time.Time `gorm:"type:date" json:"start_date"`
+	EndDate   time.Time `gorm:"type:date" json:"end_date"`
+	IsCurrent bool      `gorm:"column:is_current;default:false" json:"is_current"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// InventoryImport records a bulk inventory upload.
+type InventoryImport struct {
+	ID           int64     `gorm:"primaryKey" json:"id"`
+	Filename     string    `gorm:"not null" json:"filename"`
+	TotalRows    int       `gorm:"not null" json:"total_rows"`
+	ImportedRows int       `gorm:"default:0" json:"imported_rows"`
+	ErrorRows    int       `gorm:"default:0" json:"error_rows"`
+	Status       string    `gorm:"default:'completed'" json:"status"`
+	ImportedByID int64     `gorm:"column:imported_by_id" json:"imported_by_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 // BorrowRecord represents a member borrowing an item
 type BorrowRecord struct {
-	ID                int64     `gorm:"primaryKey" json:"id"`
-	MemberID          int64     `json:"member_id"`
-	InventoryItemID   int64     `json:"inventory_item_id"`
-	Status            string    `gorm:"default:'borrowed'" json:"status"` // borrowed, returned, overdue
-	BorrowedAt        time.Time `json:"borrowed_at"`
-	DueDate           time.Time `json:"due_date"`
+	ID                int64      `gorm:"primaryKey" json:"id"`
+	MemberID          int64      `json:"member_id"`
+	InventoryItemID   int64      `json:"inventory_item_id"`
+	Status            string     `gorm:"default:'borrowed'" json:"status"` // borrowed, returned, overdue
+	BorrowedAt        time.Time  `json:"borrowed_at"`
+	DueDate           time.Time  `json:"due_date"`
 	ReturnedAt        *time.Time `json:"returned_at,omitempty"`
-	ConditionOnReturn *string   `json:"condition_on_return,omitempty"`
-	IdempotencyKey    *string   `json:"-"`
-	ApprovedByID      *int64    `json:"approved_by_id,omitempty"`
-	ApprovalReason    *string   `json:"approval_reason,omitempty"`
-	Quantity          int       `gorm:"default:1" json:"quantity"`
-	CreatedAt         time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	ConditionOnReturn *string    `json:"condition_on_return,omitempty"`
+	IdempotencyKey    *string    `json:"-"`
+	ApprovedByID      *int64     `json:"approved_by_id,omitempty"`
+	ApprovalReason    *string    `json:"approval_reason,omitempty"`
+	Quantity          int        `gorm:"default:1" json:"quantity"`
+	CreatedAt         time.Time  `json:"created_at"`
+	UpdatedAt         time.Time  `json:"updated_at"`
 
 	// Relations
-	Member      Member `gorm:"foreignKey:MemberID" json:"-"`
-	InventoryItem InventoryItem `gorm:"foreignKey:InventoryItemID" json:"-"`
-	Extension   *ExtensionRequest `gorm:"foreignKey:BorrowRecordID" json:"extension_request,omitempty"`
-	ReturnRequest *ReturnRequest `gorm:"foreignKey:BorrowRecordID" json:"return_request,omitempty"`
+	Member        Member            `gorm:"foreignKey:MemberID" json:"-"`
+	InventoryItem InventoryItem     `gorm:"foreignKey:InventoryItemID" json:"-"`
+	Extension     *ExtensionRequest `gorm:"foreignKey:BorrowRecordID" json:"extension_request,omitempty"`
+	ReturnRequest *ReturnRequest    `gorm:"foreignKey:BorrowRecordID" json:"return_request,omitempty"`
 }
 
 // ExtensionRequest represents a borrowing extension request
@@ -273,21 +301,21 @@ type ExtensionRequest struct {
 	UpdatedAt           time.Time `json:"updated_at"`
 
 	// Relations
-	Member Member `gorm:"foreignKey:MemberID" json:"-"`
+	Member       Member       `gorm:"foreignKey:MemberID" json:"-"`
 	BorrowRecord BorrowRecord `gorm:"foreignKey:BorrowRecordID" json:"-"`
 }
 
 // ReturnRequest represents a return request for a borrowed item
 type ReturnRequest struct {
-	ID             int64     `gorm:"primaryKey" json:"id"`
-	BorrowRecordID int64     `json:"borrow_record_id"`
-	MemberID       int64     `json:"member_id"`
-	Status         string    `gorm:"default:'pending'" json:"status"` // pending, confirmed, rejected
+	ID             int64      `gorm:"primaryKey" json:"id"`
+	BorrowRecordID int64      `json:"borrow_record_id"`
+	MemberID       int64      `json:"member_id"`
+	Status         string     `gorm:"default:'pending'" json:"status"` // pending, confirmed, rejected
 	ConfirmedAt    *time.Time `json:"confirmed_at,omitempty"`
-	ConfirmedByID  *int64    `json:"confirmed_by_id,omitempty"`
-	ConditionNote  *string   `json:"condition_note,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	ConfirmedByID  *int64     `json:"confirmed_by_id,omitempty"`
+	ConditionNote  *string    `json:"condition_note,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 
 	// Relations
 	BorrowRecord BorrowRecord `gorm:"foreignKey:BorrowRecordID" json:"-"`
@@ -296,23 +324,23 @@ type ReturnRequest struct {
 
 // Task represents a lab task/assignment
 type Task struct {
-	ID                  int64     `gorm:"primaryKey" json:"id"`
-	Title               string    `gorm:"not null" json:"title"`
-	Description         *string   `json:"description,omitempty"`
-	TaskType            string    `gorm:"not null" json:"task_type"` // assignment, project, practical
+	ID                  int64      `gorm:"primaryKey" json:"id"`
+	Title               string     `gorm:"not null" json:"title"`
+	Description         *string    `json:"description,omitempty"`
+	TaskType            string     `gorm:"not null" json:"task_type"` // assignment, project, practical
 	PublishedAt         *time.Time `json:"published_at,omitempty"`
-	Deadline            time.Time `json:"due_date"`
-	Instructions        *string   `json:"instructions,omitempty"`
-	ExternalLink        *string   `json:"external_link,omitempty"`
-	RequiredAttachments *string   `json:"required_attachments,omitempty"`
-	CreatedByID         int64     `json:"created_by_id"`
+	Deadline            time.Time  `json:"due_date"`
+	Instructions        *string    `json:"instructions,omitempty"`
+	ExternalLink        *string    `json:"external_link,omitempty"`
+	RequiredAttachments *string    `json:"required_attachments,omitempty"`
+	CreatedByID         int64      `json:"created_by_id"`
 	DeletedAt           *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at"`
+	CreatedAt           time.Time  `json:"created_at"`
+	UpdatedAt           time.Time  `json:"updated_at"`
 
 	// Relations
-	CreatedBy User `gorm:"foreignKey:CreatedByID" json:"-"`
-	TaskTargets []TaskTarget `gorm:"foreignKey:TaskID" json:"-"`
+	CreatedBy              User                   `gorm:"foreignKey:CreatedByID" json:"-"`
+	TaskTargets            []TaskTarget           `gorm:"foreignKey:TaskID" json:"-"`
 	TaskSubmissionStatuses []TaskSubmissionStatus `gorm:"foreignKey:TaskID" json:"-"`
 }
 
@@ -330,36 +358,36 @@ type TaskTarget struct {
 
 // TaskSubmissionStatus represents a member's task submission status
 type TaskSubmissionStatus struct {
-	ID           int64     `gorm:"primaryKey" json:"id"`
-	TaskID       int64     `json:"task_id"`
-	MemberID     int64     `json:"member_id"`
-	Status       string    `gorm:"default:'pending'" json:"status"` // pending, submitted, verified, graded
+	ID           int64      `gorm:"primaryKey" json:"id"`
+	TaskID       int64      `json:"task_id"`
+	MemberID     int64      `json:"member_id"`
+	Status       string     `gorm:"default:'pending'" json:"status"` // pending, submitted, verified, graded
 	SubmittedAt  *time.Time `json:"submitted_at,omitempty"`
 	VerifiedAt   *time.Time `json:"verified_at,omitempty"`
-	VerifiedByID *int64    `json:"verified_by_id,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	VerifiedByID *int64     `json:"verified_by_id,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	UpdatedAt    time.Time  `json:"updated_at"`
 
 	// Relations
-	Task Task `gorm:"foreignKey:TaskID" json:"-"`
+	Task   Task   `gorm:"foreignKey:TaskID" json:"-"`
 	Member Member `gorm:"foreignKey:MemberID" json:"-"`
 }
 
 // Event represents a lab event or activity
 type Event struct {
-	ID            int64     `gorm:"primaryKey" json:"id"`
-	Title         string    `gorm:"not null" json:"title"`
-	Description   *string   `json:"description,omitempty"`
-	EventType     string    `gorm:"not null" json:"event_type"` // workshop, seminar, social, competition
-	Date          time.Time `gorm:"type:date" json:"date"`
-	StartTime     time.Time `json:"start_time"`
-	EndTime       time.Time `json:"end_time"`
-	Venue         *string   `json:"venue,omitempty"`
-	ExternalLinks string     `json:"external_links,omitempty" gorm:"type:varchar(500)"`
-	CreatedByID   int64     `json:"created_by_id"`
-	DeletedAt     *time.Time `json:"deleted_at,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID            int64          `gorm:"primaryKey" json:"id"`
+	Title         string         `gorm:"not null" json:"title"`
+	Description   *string        `json:"description,omitempty"`
+	EventType     string         `gorm:"not null" json:"event_type"` // workshop, seminar, social, competition
+	Date          time.Time      `gorm:"type:date" json:"date"`
+	StartTime     string         `gorm:"type:time;not null" json:"start_time"`
+	EndTime       string         `gorm:"type:time;not null" json:"end_time"`
+	Venue         *string        `json:"venue,omitempty"`
+	ExternalLinks pq.StringArray `gorm:"type:text[]" json:"external_links"`
+	CreatedByID   int64          `json:"created_by_id"`
+	DeletedAt     *time.Time     `json:"deleted_at,omitempty"`
+	CreatedAt     time.Time      `json:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at"`
 
 	// Relations
 	CreatedBy User `gorm:"foreignKey:CreatedByID" json:"-"`
@@ -379,11 +407,11 @@ type FAQCategory struct {
 type FAQ struct {
 	ID            int64     `gorm:"primaryKey" json:"id"`
 	FAQCategoryID int64     `json:"faq_category_id"`
-	Question    string    `gorm:"not null" json:"question"`
-	Answer      string    `gorm:"type:text" json:"answer"`
-	Position    int       `gorm:"default:0" json:"position"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	Question      string    `gorm:"not null" json:"question"`
+	Answer        string    `gorm:"type:text" json:"answer"`
+	Position      int       `gorm:"default:0" json:"position"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 
 	// Relations
 	Category FAQCategory `gorm:"foreignKey:FAQCategoryID" json:"-"`
@@ -406,9 +434,9 @@ type ContactMessage struct {
 }
 
 // Poll represents a poll within a group message
- type Poll struct {
-	ID               int64     `gorm:"primaryKey" json:"id"`
-	GroupMessageID   int64     `json:"group_message_id"`
+type Poll struct {
+	ID               int64      `gorm:"primaryKey" json:"id"`
+	GroupMessageID   int64      `json:"group_message_id"`
 	Question         string     `json:"question"`
 	IsMultipleChoice bool       `json:"is_multiple_choice"`
 	ClosesAt         *time.Time `json:"closes_at"`
@@ -422,7 +450,7 @@ type ContactMessage struct {
 }
 
 // PollOption represents a poll option
- type PollOption struct {
+type PollOption struct {
 	ID        int64     `gorm:"primaryKey" json:"id"`
 	PollID    int64     `json:"poll_id"`
 	Text      string    `json:"text"`
@@ -432,7 +460,7 @@ type ContactMessage struct {
 }
 
 // PollVote represents a poll vote
- type PollVote struct {
+type PollVote struct {
 	ID           int64     `gorm:"primaryKey" json:"id"`
 	PollID       int64     `json:"poll_id"`
 	PollOptionID int64     `json:"poll_option_id"`
@@ -456,12 +484,12 @@ type GroupMessage struct {
 	UpdatedAt       time.Time `json:"updated_at"`
 
 	// Relations
-	User User `gorm:"foreignKey:UserID" json:"-"`
+	User        User                `gorm:"foreignKey:UserID" json:"-"`
 	Attachments []MessageAttachment `gorm:"foreignKey:GroupMessageID" json:"-"`
-	Receipts    []MessageReceipt `gorm:"foreignKey:GroupMessageID" json:"-"`
-	Reactions   []MessageReaction `gorm:"foreignKey:GroupMessageID" json:"-"`
-	Poll        *Poll `gorm:"foreignKey:GroupMessageID" json:"-"`
-	LinkPreview *LinkPreview `gorm:"foreignKey:GroupMessageID" json:"-"`
+	Receipts    []MessageReceipt    `gorm:"foreignKey:GroupMessageID" json:"-"`
+	Reactions   []MessageReaction   `gorm:"foreignKey:GroupMessageID" json:"-"`
+	Poll        *Poll               `gorm:"foreignKey:GroupMessageID" json:"-"`
+	LinkPreview *LinkPreview        `gorm:"foreignKey:GroupMessageID" json:"-"`
 }
 
 // MessageAttachment represents an attachment to a group message
@@ -478,13 +506,13 @@ type MessageAttachment struct {
 
 // MessageReceipt tracks message delivery/read status
 type MessageReceipt struct {
-	ID             int64     `gorm:"primaryKey" json:"id"`
-	GroupMessageID int64     `json:"group_message_id"`
-	UserID         int64     `json:"user_id"`
+	ID             int64      `gorm:"primaryKey" json:"id"`
+	GroupMessageID int64      `json:"group_message_id"`
+	UserID         int64      `json:"user_id"`
 	DeliveredAt    *time.Time `json:"delivered_at,omitempty"`
 	ReadAt         *time.Time `json:"read_at,omitempty"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // MessageReaction represents a reaction to a group message
@@ -539,14 +567,14 @@ type PlatformSetting struct {
 
 // AdminTransfer represents an admin account transfer
 type AdminTransfer struct {
-	ID          int64     `gorm:"primaryKey" json:"id"`
-	FromAdminID int64     `json:"from_admin_id"`
-	ToAdminID   int64     `json:"to_admin_id"`
-	Status      string    `gorm:"default:'pending'" json:"status"` // pending, completed, cancelled
-	InitiatedAt time.Time `json:"initiated_at"`
+	ID          int64      `gorm:"primaryKey" json:"id"`
+	FromAdminID int64      `json:"from_admin_id"`
+	ToAdminID   int64      `json:"to_admin_id"`
+	Status      string     `gorm:"default:'pending'" json:"status"` // pending, completed, cancelled
+	InitiatedAt time.Time  `json:"initiated_at"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
 }
 
 // LabRulesVersion represents a version of lab rules
@@ -569,21 +597,47 @@ type LabRulesAcceptance struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 
 	// Relations
-	Member Member `gorm:"foreignKey:MemberID" json:"-"`
+	Member          Member          `gorm:"foreignKey:MemberID" json:"-"`
 	LabRulesVersion LabRulesVersion `gorm:"foreignKey:LabRulesVersionID" json:"-"`
 }
 
 // AuditLog represents an audit trail entry
 type AuditLog struct {
-	ID           int64     `gorm:"primaryKey" json:"id"`
-	UserID       *int64    `json:"user_id,omitempty"`
-	Action       string    `gorm:"not null" json:"action"`
-	ResourceType string    `gorm:"not null" json:"resource_type"`
-	ResourceID   *int64    `json:"resource_id,omitempty"`
+	ID           int64          `gorm:"primaryKey" json:"id"`
+	UserID       *int64         `json:"user_id,omitempty"`
+	Action       string         `gorm:"not null" json:"action"`
+	ResourceType string         `gorm:"not null" json:"resource_type"`
+	ResourceID   *int64         `json:"resource_id,omitempty"`
 	Details      datatypes.JSON `json:"details,omitempty"`
-	IPAddress    *string   `json:"ip_address,omitempty"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	IPAddress    *string        `json:"ip_address,omitempty"`
+	CreatedAt    time.Time      `json:"created_at"`
+	UpdatedAt    time.Time      `json:"updated_at"`
+}
+
+// GroupSetting stores discussion group configuration.
+type GroupSetting struct {
+	ID                  int64     `gorm:"primaryKey" json:"id"`
+	Permission          string    `gorm:"not null;default:'everyone'" json:"permission"`
+	Description         *string   `json:"description,omitempty"`
+	MediaSharingEnabled bool      `gorm:"not null;default:true" json:"media_sharing_enabled"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
+// BackgroundJob is a durable queued job processed by the jobs worker.
+type BackgroundJob struct {
+	ID          int64          `gorm:"primaryKey" json:"id"`
+	JobType     string         `gorm:"not null" json:"job_type"`
+	Payload     datatypes.JSON `gorm:"type:jsonb;not null" json:"payload"`
+	Status      string         `gorm:"not null;default:'pending'" json:"status"`
+	Attempts    int            `gorm:"not null;default:0" json:"attempts"`
+	MaxAttempts int            `gorm:"not null;default:5" json:"max_attempts"`
+	RunAt       time.Time      `gorm:"not null" json:"run_at"`
+	LockedAt    *time.Time     `json:"locked_at,omitempty"`
+	LastError   *string        `json:"last_error,omitempty"`
+	CompletedAt *time.Time     `json:"completed_at,omitempty"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
 }
 
 // ContentBlock represents a content block for the website

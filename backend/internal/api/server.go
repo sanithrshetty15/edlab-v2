@@ -53,6 +53,7 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/health", s.health)
 
 	s.registerAuthRoutes(api)
+	s.registerDeviceRoutes(api)
 	s.registerMemberRoutes(api)
 	s.registerAdminRoutes(api)
 	s.registerMemberManagementRoutes(api)

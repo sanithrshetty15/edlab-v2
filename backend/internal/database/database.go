@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/sanithrshetty15/edwinslab/backend/internal/config"
-	"github.com/sanithrshetty15/edwinslab/backend/internal/models"
 )
 
 // DBHandler wraps gorm.DB with additional functionality
@@ -21,11 +20,11 @@ type DBHandler struct {
 // InitializeDB connects to PostgreSQL using GORM
 func InitializeDB(cfg *config.Config) (*DBHandler, error) {
 	// If no DATABASE_URL provided, use a default local development URL
-	databaseURL := cfg.DATABASEURL
+	databaseURL := cfg.DatabaseURL
 	if databaseURL == "" {
-		// Development default - production will set this env var
-		databaseURL = "postgres://sanith:localhost@localhost:5432/edwins_lab_development?sslmode=disable"
-		slog.Warn("DATABASE_URL not set, using development default")
+		// Development default - production must set this environment variable.
+		databaseURL = "postgres://localhost/edwinslab_development?sslmode=disable"
+		slog.Warn("DATABASE_URL not set, using local development default")
 	}
 
 	// Open connection using gorm.io/driver/postgres
@@ -73,57 +72,13 @@ func (h *DBHandler) CloseDB() error {
 	return h.SQL.Close()
 }
 
-// Migrate runs all database migrations
-func (h *DBHandler) Migrate(value ...interface{}) error {
-	// Enable pgcrypto for random UUID generation and password hashing
-	err := h.DB.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto").Error
-	if err != nil {
+// Migrate runs all database migrations from the embedded SQL files.
+func (h *DBHandler) Migrate() error {
+	if err := h.DB.Exec("CREATE EXTENSION IF NOT EXISTS pgcrypto").Error; err != nil {
 		return fmt.Errorf("failed to create pgcrypto extension: %w", err)
 	}
 
-	// Run migrations
-	err = h.DB.AutoMigrate(
-		&models.User{},
-		&models.Member{},
-		&models.Admin{},
-		&models.Session{},
-		&models.OTPCode{},
-		&models.BiometricEnrollment{},
-		&models.DeviceRegistration{},
-		&models.DeviceEvent{},
-		&models.AttendanceLog{},
-		&models.Announcement{},
-		&models.AnnouncementRead{},
-		&models.Notification{},
-		&models.InventoryItem{},
-		&models.BorrowRecord{},
-		&models.ExtensionRequest{},
-		&models.ReturnRequest{},
-		&models.Task{},
-		&models.TaskTarget{},
-		&models.TaskSubmissionStatus{},
-		&models.Event{},
-		&models.FAQCategory{},
-		&models.FAQ{},
-		&models.ContactMessage{},
-		&models.GroupMessage{},
-		&models.MessageAttachment{},
-		&models.MessageReceipt{},
-		&models.MessageReaction{},
-		&models.MessagePin{},
-		&models.MessageStar{},
-		&models.LinkPreview{},
-		&models.Poll{},
-		&models.PollOption{},
-		&models.PollVote{},
-		&models.AdminTransfer{},
-		&models.LabRulesVersion{},
-		&models.LabRulesAcceptance{},
-		&models.PlatformSetting{},
-		&models.AuditLog{},
-		&models.ContentBlock{},
-	)
-	if err != nil {
+	if err := Migrate(h.DB, slog.Default()); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 

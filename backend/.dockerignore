@@ -1,45 +1,35 @@
-# See https://docs.docker.com/engine/reference/builder/#dockerignore-file for more about ignoring files.
+# Git and local environment/config
+.git/
+.gitignore
+.github/
+.env
+.env.*
+!.env.example
 
-# Ignore git directory.
-/.git/
-/.gitignore
+# Compiled binaries and build output
+/edwinslab-api
+/build/
+/dist/
+*.exe
+*.test
 
-# Ignore bundler config.
-/.bundle
+# Local runtime data
+/data/
+/uploads/
+/log/
+/tmp/
+*.log
 
-# Ignore all environment files.
-/.env*
+# Documentation and editor files not needed in the image
+README.md
+STATUS.md
+PROGRESS.md
+.idea/
+.vscode/
+.freebuff/
+*.swp
+*.swo
+*~
 
-# Ignore all default key files.
-/config/master.key
-/config/credentials/*.key
-
-# Ignore all logfiles and tempfiles.
-/log/*
-/tmp/*
-!/log/.keep
-!/tmp/.keep
-
-# Ignore pidfiles, but keep the directory.
-/tmp/pids/*
-!/tmp/pids/.keep
-
-# Ignore storage (uploaded files in development and any SQLite databases).
-/storage/*
-!/storage/.keep
-/tmp/storage/*
-!/tmp/storage/.keep
-
-# Ignore CI service files.
-/.github
-
-# Ignore Kamal files.
-/config/deploy*.yml
-/.kamal
-
-# Ignore development files
-/.devcontainer
-
-# Ignore Docker-related files
-/.dockerignore
-/Dockerfile*
+# OS noise
+.DS_Store

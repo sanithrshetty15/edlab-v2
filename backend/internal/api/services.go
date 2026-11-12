@@ -15,13 +15,14 @@ type emailJobPayload struct {
 	To      string `json:"to"`
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
+	HTML    string `json:"html"`
 }
 
 func (s *Server) registerJobHandlers() {
 	if s.Jobs == nil {
 		return
 	}
-	s.Jobs.Register("email_delivery", func(ctx context.Context, payload json.RawMessage) error {
+	handler := func(ctx context.Context, payload json.RawMessage) error {
 		var item emailJobPayload
 		if err := json.Unmarshal(payload, &item); err != nil {
 			return fmt.Errorf("decode email job: %w", err)
@@ -29,16 +30,19 @@ func (s *Server) registerJobHandlers() {
 		if s.Mailer == nil {
 			return fmt.Errorf("mailer unavailable")
 		}
-		return s.Mailer.SendEmail(item.To, item.Subject, item.Body)
-	})
+		body := item.Body
+		if body == "" {
+			body = item.HTML
+		}
+		return s.Mailer.SendEmail(item.To, item.Subject, body)
+	}
+	s.Jobs.Register("email_delivery", handler)
+	s.Jobs.Register("mail.send", handler)
+	s.Jobs.Register("biometric.process_event", s.processBiometricEvent)
 }
 
 func (s *Server) EmailConfigured() bool {
 	return s.Mailer != nil && (s.Mailer.ResendAPIKey != "" || (s.Mailer.GmailUsername != "" && s.Mailer.GmailAppPassword != ""))
-}
-
-func (s *Server) SMSConfigured() bool {
-	return s.Mailer != nil && s.Mailer.ResendAPIKey != ""
 }
 
 func (s *Server) enqueueEmail(ctx context.Context, to, subject, body string) error {

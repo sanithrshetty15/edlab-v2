@@ -1,29 +1,36 @@
-# Edwins Lab — Render Deployment Configuration
+# Edwins Lab - Render Deployment Configuration
 # ==============================================
-# DO NOT EDIT: This file is managed by the Edwins Lab deployment process.
-# Changes require review by the deployment owner.
+# Dockerfile lives in backend/ and is built with backend/ as the context.
+# Set all `sync: false` values in the Render dashboard before deploying.
 
 services:
   - type: web
     name: edwinslab-api
-    env: docker
+    runtime: docker
     plan: free
-    buildCommand: "cd backend && go mod download && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w -extldflags \"-static\"' -o edwinslab-api ./cmd/api"
-    startCommand: "./edwinslab-api"
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /health
     envVars:
       - key: PORT
         value: 8080
       - key: APP_ENV
         value: production
+      - key: APP_TIMEZONE
+        value: Asia/Kolkata
       - key: DATABASE_URL
         sync: false
       - key: JWT_SECRET
-        sync: false
+        generateValue: true
       - key: SESSION_SECRET
-        sync: false
+        generateValue: true
       - key: ADMIN_ONE_PASSWORD
         sync: false
       - key: ADMIN_TWO_PASSWORD
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: RESEND_API_KEY
         sync: false
@@ -33,7 +40,3 @@ services:
         value: 60
       - key: SESSION_TTL_SECONDS
         value: 86400
-    disk:
-      name: edwinslab-data
-      mountPath: /app/data
-      size: 100

@@ -5,6 +5,7 @@ go 1.26.10
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/joho/godotenv v1.5.1
+	github.com/lib/pq v1.10.9
 	golang.org/x/crypto v0.59.0
 	gorm.io/datatypes v1.2.7
 	gorm.io/driver/postgres v1.6.3
