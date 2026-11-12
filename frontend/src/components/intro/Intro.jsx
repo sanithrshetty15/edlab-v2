@@ -6,12 +6,25 @@ import { prefersReducedMotion } from '../../utils/reducedMotion'
 const INTRO_FALLBACK_MS = 9000
 let introPlayed = false
 
-export default function Intro({ children }) {
+export default function Intro({ children, onFinished }) {
   const [introVisible, setIntroVisible] = useState(
     () => !introPlayed && !prefersReducedMotion(),
   )
   const [revealStarted, setRevealStarted] = useState(() => !introVisible)
   const finishedRef = useRef(false)
+  const announcedRef = useRef(false)
+  const onFinishedRef = useRef(onFinished)
+
+  useEffect(() => {
+    onFinishedRef.current = onFinished
+  }, [onFinished])
+
+  const announceFinished = useCallback(() => {
+    if (announcedRef.current) return
+
+    announcedRef.current = true
+    onFinishedRef.current?.()
+  }, [])
 
   const finish = useCallback(() => {
     if (finishedRef.current) return
@@ -20,7 +33,12 @@ export default function Intro({ children }) {
     introPlayed = true
     setRevealStarted(true)
     setIntroVisible(false)
-  }, [])
+    announceFinished()
+  }, [announceFinished])
+
+  useEffect(() => {
+    if (!introVisible) announceFinished()
+  }, [introVisible, announceFinished])
 
   const startReveal = useCallback(() => {
     setRevealStarted(true)

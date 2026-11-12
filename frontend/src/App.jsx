@@ -1,9 +1,10 @@
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import "./App.css";
 import Intro from "./components/intro/Intro";
 import Navbar from "./components/layout/Navbar";
 import PwaUpdateBanner from "./components/pwa/PwaUpdateBanner";
+import AppUpdateGate from "./components/native/AppUpdateGate";
 import ExplorePage from "./pages/ExplorePage";
 import { Hero, About, Linux, Testimonials, Download, Footer } from "./sections";
 import { refreshScrollTriggers } from "./utils/animations";
@@ -21,6 +22,21 @@ function PortalLoading() {
         Opening Edwins Lab portal…
       </p>
     </div>
+  );
+}
+
+function NativeApp() {
+  const [introFinished, setIntroFinished] = useState(false);
+
+  return (
+    <>
+      <Intro onFinished={() => setIntroFinished(true)}>
+        <Suspense fallback={<PortalLoading />}>
+          <AppPortal />
+        </Suspense>
+      </Intro>
+      {introFinished && <AppUpdateGate />}
+    </>
   );
 }
 
@@ -61,11 +77,7 @@ export default function App() {
   let content;
 
   if (isNativeApp) {
-    content = (
-      <Suspense fallback={<PortalLoading />}>
-        <AppPortal />
-      </Suspense>
-    );
+    content = <NativeApp />;
   } else if (isExplore) {
     content = <ExplorePage />;
   } else {

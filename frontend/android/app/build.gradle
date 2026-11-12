@@ -7,8 +7,8 @@ android {
         applicationId "com.edwinslab.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 3
+        versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -31,15 +31,20 @@ android {
     // ANDROID_KEY_PASSWORD=key_password
     // Note: These must be set via environment variables for release builds.
     // The keystore file must NOT be committed to the repository.
+    // The keystore is never committed. When the environment variables are
+    // missing the release build stays unsigned; scripts/release-android.sh
+    // refuses to publish an unsigned APK.
+    def releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
+    def hasReleaseSigning = releaseKeystore != null && !releaseKeystore.trim().isEmpty()
+
     signingConfigs {
         release {
-            // Use project property or environment variable for keystore path
-            // If ANDROID_KEYSTORE_PATH is not set, release builds will fail
-            // which is intentional - prevents accidental unconfigured releases
-            storeFile file(System.getenv("ANDROID_KEYSTORE_PATH"))
-            storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
-            keyAlias System.getenv("ANDROID_KEY_ALIAS")
-            keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            if (hasReleaseSigning) {
+                storeFile file(releaseKeystore)
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD")
+            }
         }
     }
 
@@ -47,7 +52,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            signingConfig signingConfigs.release
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
         }
         debug {
             signingConfig signingConfigs.debug

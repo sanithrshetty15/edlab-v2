@@ -16,6 +16,7 @@ export function Modal({
   size = "md",
   className = "",
   closeLabel = "Close dialog",
+  dismissible = true,
 }) {
   const dialogRef = useRef(null);
   const previousFocusRef = useRef(null);
@@ -26,7 +27,7 @@ export function Modal({
     (event) => {
       if (event.key === "Escape") {
         event.stopPropagation();
-        onClose();
+        if (dismissible) onClose();
         return;
       }
 
@@ -49,7 +50,7 @@ export function Modal({
         first.focus();
       }
     },
-    [onClose],
+    [onClose, dismissible],
   );
 
   useEffect(() => {
@@ -83,8 +84,8 @@ export function Modal({
       <button
         type="button"
         className="lab-modal-backdrop"
-        aria-label="Close dialog"
-        onClick={onClose}
+        aria-label={dismissible ? "Close dialog" : "Dialog backdrop"}
+        onClick={dismissible ? onClose : undefined}
         tabIndex={-1}
       />
       <div
@@ -107,14 +108,16 @@ export function Modal({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            className="lab-icon-button lab-icon-button--ghost"
-            onClick={onClose}
-            aria-label={closeLabel}
-          >
-            <CloseIcon className="h-4 w-4" />
-          </button>
+          {dismissible && (
+            <button
+              type="button"
+              className="lab-icon-button lab-icon-button--ghost"
+              onClick={onClose}
+              aria-label={closeLabel}
+            >
+              <CloseIcon className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
         <div className="lab-modal__body">{children}</div>

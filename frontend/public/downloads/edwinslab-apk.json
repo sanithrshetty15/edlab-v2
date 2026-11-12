@@ -1,11 +1,19 @@
 {
   "name": "Edwins Lab",
-  "versionName": "1.0",
-  "versionCode": 1,
   "packageId": "com.edwinslab.app",
+  "versionName": "1.1",
+  "versionCode": 2,
   "minSdk": 23,
-  "file": "/downloads/EdwinsLab-1.0.apk",
-  "sizeBytes": 7431876,
-  "sha256": "5244c5c4157081b4e19472320fe91da7419f1e0b0bfcafb1dd313fb06724a1d7",
-  "releasedAt": "2026-11-10"
+  "apkUrl": "https://edwinslab.vercel.app/downloads/EdwinsLab-1.1.apk",
+  "file": "/downloads/EdwinsLab-1.1.apk",
+  "sizeBytes": 7490089,
+  "sha256": "7969a95344ad2f6f612ca418edf304bd2416365a199058b39e97650a138960b3",
+  "releasedAt": "2026-11-12",
+  "releaseNotes": [
+    "Member and admin sign-in for the Android app",
+    "Encrypted on-device session storage",
+    "APK downloads with SHA-256 verification"
+  ],
+  "mandatoryUpdate": false,
+  "minimumSupportedVersion": 0
 }
