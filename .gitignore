@@ -32,3 +32,12 @@ vendor/bundle/
 *.swp
 backend/.kamal/secrets
 backend/.kamal/secrets
+
+# PlatformIO build artifacts
+firmware/esp32/.pio/
+**/.pio/
+
+# Local firmware credentials (never commit)
+firmware/esp32/src/config.local.h
+**/config.local.h
+frontend/test-results/

@@ -1,0 +1,427 @@
+/*
+ * Edwins Lab Biometric Attendance & Door Access Controller
+ * ESP32-WROOM-32UE with ALF V1.0 custom board
+ * 
+ * Connects to Go backend API for authorization.
+ * Fingerprint match alone is NOT sufficient - backend must approve.
+ */
+
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <Adafruit_Fingerprint.h>
+
+// ===== WIFI CONFIGURATION =====
+const char* WIFI_SSID = "YOUR_WIFI_NAME";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+
+// ===== API CONFIGURATION =====
+// Replace with your actual Go backend domain
+const char* API_BASE_URL = "https://edwinslab.onrender.com";
+
+// ===== GPIO PINOUT (ALF V1.0 Board) =====
+// UART2: GPIO16=RX, GPIO17=TX  (for Login reader)
+// UART1: GPIO19=RX, GPIO18=TX  (for Logout reader) - using available GPIO pins
+// Note: GPIO26/27 are input-only (ADC1), so we use GPIO18/19 for UART1
+#define LOGIN_RX       16
+#define LOGIN_TX       17
+#define LOGOUT_RX      19
+#define LOGOUT_TX      18
+#define RELAY_PIN      25
+#define EXIT_BUTTON    33
+#define GREEN_LED      23
+#define RED_LED        22
+#define BUZZER_PIN     21
+
+// Relay module configuration
+#define RELAY_LOCKED_LEVEL HIGH
+#define RELAY_UNLOCK_LEVEL LOW
+
+// ===== FINGERPRINT READERS =====
+// UART2 for Login (Reader 1) - GPIO16/RX, GPIO17/TX
+HardwareSerial loginSerial(2);
+// UART1 for Logout (Reader 2) - GPIO19=RX, GPIO18=TX
+HardwareSerial logoutSerial(1);
+
+Adafruit_Fingerprint loginReader = Adafruit_Fingerprint(&loginSerial);
+Adafruit_Fingerprint logoutReader = Adafruit_Fingerprint(&logoutSerial);
+
+// ===== DOOR SETTINGS =====
+const unsigned long DOOR_OPEN_MS = 5000;
+unsigned long doorOpenedAt = 0;
+bool doorUnlocked = false;
+
+// Scan timing
+unsigned long lastLoginScan = 0;
+unsigned long lastLogoutScan = 0;
+const unsigned long SCAN_INTERVAL = 150;
+
+// ===== DEVICE CONFIGURATION =====
+// Device ID assigned during provisioning
+const int DEVICE_ID = 1;
+
+// Backend API token - should be configured securely
+const char* DEVICE_API_KEY = "YOUR_DEVICE_API_KEY_HERE";
+
+// ===== ATTENDANCE SESSION =====
+struct AttendanceSession {
+  int memberId;
+  String memberLoginId;
+  String memberName;
+  String usn;
+  time_t loginTime;
+  time_t logoutTime;
+  bool hasLoggedOut;
+} currentSession;
+
+// ===== FUNCTIONS =====
+
+// Authenticate with backend using device API key
+bool authenticateDevice() {
+  HTTPClient http;
+  http.begin(API_BASE_URL + "/api/v1/device/authenticate");
+  http.addHeader("X-Device-Api-Key", DEVICE_API_KEY);
+  http.addHeader("X-Device-ID", String(DEVICE_ID));
+  
+  int httpCode = http.GET();
+  String payload = "";
+  
+  if (httpCode > 0) {
+    payload = http.getString();
+  }
+  http.end();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    return true;
+  }
+  
+  return false;
+}
+
+// Record biometric event to backend
+bool recordBiometricEvent(const String& eventType, const String& memberIdentifier,
+                          const String& idempotencyKey) {
+  if (!WiFi.isConnected()) return false;
+  
+  HTTPClient http;
+  http.begin(API_BASE_URL + "/api/v1/biometric/event");
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Token", DEVICE_API_KEY);
+  
+  String jsonPayload = "{\"device_id\": " + String(DEVICE_ID) + 
+                       ",\"event_type\": \"" + eventType + "\"";
+                       
+  if (!memberIdentifier.isEmpty()) {
+    jsonPayload += ",\"member_identifier\": \"" + memberIdentifier + "\"";
+  }
+  
+  jsonPayload += ",\"idempotency_key\": \"" + idempotencyKey + "\"}";
+  
+  int httpCode = http.POST(jsonPayload);
+  String response = "";
+  
+  if (httpCode > 0) {
+    response = http.getString();
+  }
+  http.end();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    if (response.indexOf("success") >= 0) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+// Authorize login by contacting Go backend
+bool authorizeLogin(uint16_t fingerprintID) {
+  if (!authenticateDevice()) {
+    Serial.println("Device authentication failed in authorizeLogin");
+    return false;
+  }
+  
+  HTTPClient http;
+  http.begin(API_BASE_URL + "/api/v1/biometric/event");
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Token", DEVICE_API_KEY);
+  
+  String jsonPayload = "{\"device_id\": " + String(DEVICE_ID) + 
+                       ",\"event_type\": \"fingerprint_scan\"," +
+                       "\"idempotency_key\": \"login_fp_" + String(fingerprintID) + "_" + String(millis()) + "\"," +
+                       "\"member_identifier\": \"\"}";
+  
+  int httpCode = http.POST(jsonPayload);
+  String response = "";
+  
+  if (httpCode > 0) {
+    response = http.getString();
+  }
+  http.end();
+  
+  if (httpCode == HTTP_CODE_OK) {
+    if (response.indexOf("\"success\": true") >= 0 || 
+        response.indexOf("\"approved\": true") >= 0) {
+      if (currentSession.loginTime == 0) {
+        currentSession.loginTime = time(nullptr);
+        currentSession.hasLoggedOut = false;
+      }
+      Serial.println("Login authorized by backend");
+      return true;
+    } else {
+      Serial.print("Login denied by backend: ");
+      Serial.println(response);
+      return false;
+    }
+  } else {
+    Serial.print("HTTP error in authorizeLogin: "); Serial.println(httpCode);
+    return false;
+  }
+}
+
+// Authorize logout by contacting Go backend
+bool authorizeLogout(uint16_t fingerprintID) {
+  if (!authenticateDevice()) {
+    Serial.println("Device authentication failed in authorizeLogout");
+    return false;
+  }
+  
+  if (!currentSession.hasLoggedOut && currentSession.loginTime > 0) {
+    HTTPClient http;
+    http.begin(API_BASE_URL + "/api/v1/biometric/event");
+    http.addHeader("Content-Type", "application/json");
+    http.addHeader("X-Device-Token", DEVICE_API_KEY);
+    
+    String jsonPayload = "{\"device_id\": " + String(DEVICE_ID) + 
+                         ",\"event_type\": \"fingerprint_scan\"," +
+                         "\"idempotency_key\": \"logout_fp_" + String(fingerprintID) + "_" + String(millis()) + "\"," +
+                         "\"member_identifier\": \"\"}";
+    
+    int httpCode = http.POST(jsonPayload);
+    String response = "";
+    
+    if (httpCode > 0) {
+      response = http.getString();
+    }
+    http.end();
+    
+    if (httpCode == HTTP_CODE_OK) {
+      if (response.indexOf("\"success\": true") >= 0 || 
+          response.indexOf("\"approved\": true") >= 0) {
+        currentSession.logoutTime = time(nullptr);
+        currentSession.hasLoggedOut = true;
+        
+        int durationSeconds = currentSession.logoutTime - currentSession.loginTime;
+        Serial.print("Logout recorded by backend. Duration: "); 
+        Serial.print(durationSeconds); Serial.println(" seconds");
+        return true;
+      } else {
+        Serial.print("Logout denied by backend: ");
+        Serial.println(response);
+        return false;
+      }
+    } else {
+      Serial.print("HTTP error in authorizeLogout: "); Serial.println(httpCode);
+      return false;
+    }
+  } else {
+    Serial.println("Logout denied: no active login session");
+    return false;
+  }
+}
+
+// Success/Error signal functions
+void successSignal() {
+  digitalWrite(GREEN_LED, HIGH);
+  digitalWrite(RED_LED, LOW);
+  tone(BUZZER_PIN, 1800, 120);
+  delay(150);
+  digitalWrite(GREEN_LED, LOW);
+}
+
+void errorSignal() {
+  digitalWrite(RED_LED, HIGH);
+  digitalWrite(GREEN_LED, LOW);
+  tone(BUZZER_PIN, 400, 300);
+  delay(350);
+  digitalWrite(RED_LED, LOW);
+}
+
+void lockDoor() {
+  digitalWrite(RELAY_PIN, RELAY_LOCKED_LEVEL);
+  doorUnlocked = false;
+  Serial.println("Door locked");
+}
+
+void unlockDoor() {
+  if (!doorUnlocked) {
+    digitalWrite(RELAY_PIN, RELAY_UNLOCK_LEVEL);
+    doorUnlocked = true;
+    doorOpenedAt = millis();
+    Serial.println("Door unlocked");
+  }
+}
+
+void updateDoor() {
+  if (doorUnlocked && millis() - doorOpenedAt >= DOOR_OPEN_MS) {
+    lockDoor();
+  }
+}
+
+// Scan fingerprint from reader
+int scanFingerprint(Adafruit_Fingerprint &reader) {
+  uint8_t result = reader.getImage();
+  if (result != FINGERPRINT_OK) return -1;
+  
+  result = reader.image2Tz();
+  if (result != FINGERPRINT_OK) return -1;
+  
+  result = reader.fingerFastSearch();
+  if (result != FINGERPRINT_OK) return -1;
+  
+  return reader.fingerID;
+}
+
+// Process login scan
+void processLogin() {
+  int fingerprintID = scanFingerprint(loginReader);
+  if (fingerprintID < 0) return;
+  
+  Serial.print("Login reader matched ID: "); Serial.println(fingerprintID);
+  
+  if (authorizeLogin(fingerprintID)) {
+    successSignal();
+    unlockDoor();
+    Serial.println("LOGIN APPROVED");
+  } else {
+    errorSignal();
+    Serial.println("LOGIN DENIED");
+  }
+}
+
+// Process logout scan
+void processLogout() {
+  int fingerprintID = scanFingerprint(logoutReader);
+  if (fingerprintID < 0) return;
+  
+  Serial.print("Logout reader matched ID: "); Serial.println(fingerprintID);
+  
+  if (authorizeLogout(fingerprintID)) {
+    successSignal();
+    Serial.println("LOGOUT RECORDED");
+  } else {
+    errorSignal();
+    Serial.println("LOGOUT DENIED");
+  }
+}
+
+// Check emergency exit
+void checkEmergencyExit() {
+  if (digitalRead(EXIT_BUTTON) == LOW) {
+    // Fail-safe: release electromagnetic lock
+    unlockDoor();
+    Serial.println("EMERGENCY EXIT ACTIVATED");
+    Serial.println("DO NOT create a member logout event");
+    
+    for (int i = 0; i < 3; i++) {
+      digitalWrite(BUZZER_PIN, HIGH);
+      delay(400);
+      digitalWrite(BUZZER_PIN, LOW);
+      delay(100);
+    }
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  
+  pinMode(RELAY_PIN, OUTPUT);
+  pinMode(EXIT_BUTTON, INPUT_PULLUP);
+  pinMode(GREEN_LED, OUTPUT);
+  pinMode(RED_LED, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
+  
+  // Safe defaults on boot - electromagnet locked
+  lockDoor();
+  digitalWrite(GREEN_LED, LOW);
+  digitalWrite(RED_LED, LOW);
+  
+  // Start UART connections for both R307S sensors
+  // UART2: GPIO16(RX), GPIO17(TX) for Login reader
+  loginSerial.begin(57600, SERIAL_8N1, LOGIN_RX, LOGIN_TX);
+  // UART1: GPIO19(RX), GPIO18(TX) for Logout reader
+  // Using GPIO18/19 which are valid UART1 pins on ESP32
+  logoutSerial.begin(57600, SERIAL_8N1, LOGOUT_RX, LOGOUT_TX);
+  
+  loginReader.begin(57600);
+  logoutReader.begin(57600);
+  
+  delay(500);
+  Serial.println();
+  Serial.println("EDWINS LAB BIOMETRIC CONTROLLER");
+  Serial.println("--------------------------------");
+  
+  if (loginReader.verifyPassword()) {
+    Serial.println("Login reader connected");
+  } else {
+    Serial.println("ERROR: Login reader not detected");
+  }
+  
+  if (logoutReader.verifyPassword()) {
+    Serial.println("Logout reader connected");
+  } else {
+    Serial.println("ERROR: Logout reader not detected");
+  }
+  
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  
+  Serial.print("Connecting to WiFi");
+  unsigned long start = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - start < 10000) {
+    delay(250);
+    Serial.print(".");
+  }
+  Serial.println();
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("WiFi connected: "); Serial.println(WiFi.localIP);
+    
+    if (authenticateDevice()) {
+      Serial.println("Device authenticated with backend");
+      successSignal();
+    } else {
+      Serial.println("Device authentication failed - check API key and backend");
+      errorSignal();
+    }
+  } else {
+    Serial.println("WiFi unavailable; access remains denied");
+    errorSignal();
+  }
+  
+  currentSession.hasLoggedOut = false;
+  currentSession.loginTime = 0;
+  currentSession.logoutTime = 0;
+  
+  Serial.println("Controller ready");
+}
+
+void loop() {
+  // 1. Emergency exit check (highest priority)
+  checkEmergencyExit();
+  
+  // 2. WiFi-dependent operations only when connected
+  if (WiFi.status() == WL_CONNECTED) {
+    if (millis() - lastLoginScan >= SCAN_INTERVAL) {
+      lastLoginScan = millis();
+      processLogin();
+    }
+    
+    if (millis() - lastLogoutScan >= SCAN_INTERVAL) {
+      lastLogoutScan = millis();
+      processLogout();
+    }
+  }
+  
+  // 3. Door timeout management (runs regardless of WiFi)
+  updateDoor();
+}

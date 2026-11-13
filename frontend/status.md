@@ -8,6 +8,10 @@ _Last updated: 2026-11-11._
   double staircase preloader built with Motion for React (`motion/react`).
 - The old `IntroAnimation.jsx` (GSAP-based vertical split with two white
   half-screens) is completely removed and replaced.
+- **Bug fix:** Infinite recursion `Maximum call stack size exceeded` resolved by
+  removing the `edwins:site-reveal` event dispatch from `startReveal()` and
+  removing the event listener from `IntroAnimation.jsx`. The reveal now only
+  updates React state directly.
 - New animation: 14 top staircase panels fall downward from the top edge with a
   55 ms stagger; 12 bottom staircase panels rise upward from the bottom edge with
   a 48 ms stagger and a 200 ms head start. Both staircases use `easeOut` and a
@@ -25,6 +29,8 @@ _Last updated: 2026-11-11._
 - Verified via headless Chromium: intro overlay mounts, top and bottom staircase
   containers render, website content (`main#main`) becomes visible after the
   transition, and the overlay is removed cleanly. No console errors.
+- **Additional fix:** Removed `SITE_REVEAL_EVENT` import and event dispatch to
+  eliminate the recursive event loop that caused the stack overflow.
 
 ## Latest update — authentication access
 
