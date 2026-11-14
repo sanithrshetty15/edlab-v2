@@ -242,6 +242,217 @@ bool submitFingerprintEnrollment(int64_t memberId,
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Enrollment sessions
+// ---------------------------------------------------------------------------
+
+namespace {
+
+bool performDeviceRequest(const char* method, const String& path,
+                          const String& body, String& response, int& httpCode) {
+  response = "";
+  httpCode = 0;
+  if (!isWifiConnected()) {
+    return false;
+  }
+  if (!isDeviceAuthenticated() && !authenticateDevice()) {
+    return false;
+  }
+
+  HTTPClient http;
+  http.setTimeout(8000);
+  String url = String(API_BASE_URL) + path;
+  if (!http.begin(url)) {
+    http.end();
+    return false;
+  }
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("X-Device-Token", g_deviceToken);
+
+  httpCode = (strcmp(method, "GET") == 0) ? http.GET() : http.POST(body);
+  if (httpCode > 0) {
+    response = http.getString();
+  }
+  http.end();
+
+  if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
+    invalidateDeviceToken();
+  }
+  return httpCode > 0;
+}
+
+void parseEnrollmentSession(JsonVariantConst variant, EnrollmentSessionInfo& out) {
+  out = EnrollmentSessionInfo();
+  if (variant.isNull()) {
+    return;
+  }
+  JsonObjectConst item = variant.as<JsonObjectConst>();
+  out.sessionUid = item["session_uid"].as<String>();
+  out.status = item["status"].as<String>();
+  out.memberName = item["member_name"].as<String>();
+  out.memberLoginId = item["member_login_id"].as<String>();
+  out.errorCode = item["error_code"].as<String>();
+  out.errorMessage = item["error_message"].as<String>();
+  out.memberId = item["member_id"].as<int64_t>();
+  out.attempts = item["attempts"].as<int>();
+  out.cleanupRequired = item["cleanup_required"].as<bool>();
+  out.active = item["is_active"].as<bool>();
+  JsonVariantConst slot = item["fingerprint_slot"];
+  if (!slot.isNull()) {
+    out.slot = slot.as<int>();
+  }
+  out.valid = out.sessionUid.length() > 0;
+}
+
+bool parseEnrollmentResponse(const String& response, int httpCode,
+                             JsonDocument& doc, EnrollmentSessionInfo& out,
+                             String* action = nullptr) {
+  if (httpCode <= 0) {
+    return false;
+  }
+  if (deserializeJson(doc, response)) {
+    return true;
+  }
+  if (action != nullptr) {
+    *action = doc["action"].as<String>();
+  }
+  parseEnrollmentSession(doc["enrollment"], out);
+  return true;
+}
+
+} // namespace
+
+bool fetchEnrollmentCommand(EnrollmentSessionInfo& out, String& action, int& httpCode) {
+  out = EnrollmentSessionInfo();
+  action = "";
+  String response;
+  if (!performDeviceRequest("GET", "/api/v1/biometric/enrollment-session", "", response, httpCode)) {
+    return false;
+  }
+  JsonDocument doc;
+  if (!parseEnrollmentResponse(response, httpCode, doc, out, &action)) {
+    return false;
+  }
+  if (httpCode != HTTP_CODE_OK || !doc["success"].as<bool>()) {
+    return false;
+  }
+  return true;
+}
+
+bool fetchEnrollmentSession(const String& sessionUid, EnrollmentSessionInfo& out,
+                            String& action, int& httpCode) {
+  out = EnrollmentSessionInfo();
+  action = "";
+  if (sessionUid.length() == 0) {
+    return false;
+  }
+  String response;
+  String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid;
+  if (!performDeviceRequest("GET", path, "", response, httpCode)) {
+    return false;
+  }
+  JsonDocument doc;
+  if (!parseEnrollmentResponse(response, httpCode, doc, out, &action)) {
+    return false;
+  }
+  return httpCode == HTTP_CODE_OK && doc["success"].as<bool>();
+}
+
+bool updateEnrollmentProgress(const String& sessionUid, const String& status,
+                              int slot, const String& errorCode,
+                              const String& errorMessage,
+                              EnrollmentSessionInfo& out, int& httpCode) {
+  out = EnrollmentSessionInfo();
+  if (sessionUid.length() == 0 || status.length() == 0) {
+    return false;
+  }
+  JsonDocument request;
+  request["status"] = status;
+  if (slot >= 1) {
+    request["fingerprint_slot"] = slot;
+  }
+  if (errorCode.length() > 0) {
+    request["error_code"] = errorCode;
+  }
+  if (errorMessage.length() > 0) {
+    request["error_message"] = errorMessage;
+  }
+  String body;
+  serializeJson(request, body);
+  String response;
+  String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/progress";
+  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+    return false;
+  }
+  JsonDocument doc;
+  return parseEnrollmentResponse(response, httpCode, doc, out);
+}
+
+bool completeEnrollment(const String& sessionUid, int slot,
+                        EnrollmentSessionInfo& out, int& httpCode) {
+  out = EnrollmentSessionInfo();
+  if (sessionUid.length() == 0 || slot < 1) {
+    return false;
+  }
+  JsonDocument request;
+  request["fingerprint_slot"] = slot;
+  request["device_user_id"] = String("slot:") + String(slot);
+  String body;
+  serializeJson(request, body);
+  String response;
+  String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/complete";
+  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+    return false;
+  }
+  JsonDocument doc;
+  return parseEnrollmentResponse(response, httpCode, doc, out);
+}
+
+bool failEnrollment(const String& sessionUid, int slot, const String& errorCode,
+                    const String& errorMessage, EnrollmentSessionInfo& out,
+                    int& httpCode) {
+  out = EnrollmentSessionInfo();
+  if (sessionUid.length() == 0) {
+    return false;
+  }
+  JsonDocument request;
+  if (slot >= 1) {
+    request["fingerprint_slot"] = slot;
+  }
+  request["error_code"] = errorCode;
+  request["error_message"] = errorMessage;
+  String body;
+  serializeJson(request, body);
+  String response;
+  String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/fail";
+  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+    return false;
+  }
+  JsonDocument doc;
+  return parseEnrollmentResponse(response, httpCode, doc, out);
+}
+
+bool acknowledgeEnrollmentCleanup(const String& sessionUid, int slot,
+                                  EnrollmentSessionInfo& out, int& httpCode) {
+  out = EnrollmentSessionInfo();
+  if (sessionUid.length() == 0) {
+    return false;
+  }
+  JsonDocument request;
+  if (slot >= 1) {
+    request["fingerprint_slot"] = slot;
+  }
+  String body;
+  serializeJson(request, body);
+  String response;
+  String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/cleanup";
+  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+    return false;
+  }
+  JsonDocument doc;
+  return parseEnrollmentResponse(response, httpCode, doc, out);
+}
+
 bool fetchDeviceStatus(int& pendingEvents) {
   pendingEvents = 0;
   if (!isWifiConnected()) {

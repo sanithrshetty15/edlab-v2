@@ -70,6 +70,7 @@ func (s *Server) listMembers(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "Unable to load members")
 		return
 	}
+	s.attachEnrollmentStatuses(c.Request.Context(), members)
 
 	items := make([]gin.H, 0, len(members))
 	for i := range members {
@@ -194,18 +195,37 @@ func (s *Server) createMember(c *gin.Context) {
 		return
 	}
 
+	sessionUID, err := generateEnrollmentSessionUID()
+	if err != nil {
+		s.Log.Error("enrollment session UID generation failed", "error", err)
+		fail(c, http.StatusInternalServerError, "Unable to create member")
+		return
+	}
+	requestedByID := int64(0)
+	if user := currentUser(c); user != nil {
+		requestedByID = user.ID
+	}
+
 	var member models.Member
+	var enrollmentSession models.MemberEnrollmentSession
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user := models.User{
 			Email:          email,
 			Phone:          &normalized,
 			PasswordDigest: &hash,
 			Role:           "member",
-			Active:         true,
+			Active:         false,
 		}
 		if err := tx.Create(&user).Error; err != nil {
 			return err
 		}
+		// The users.active column defaults to true, so GORM omits a false zero
+		// value on create. Explicitly deactivate the account until enrollment
+		// finalizes.
+		if err := tx.Model(&models.User{}).Where("id = ?", user.ID).Update("active", false).Error; err != nil {
+			return err
+		}
+		user.Active = false
 		member = models.Member{
 			UserID:             user.ID,
 			Name:               name,
@@ -215,7 +235,7 @@ func (s *Server) createMember(c *gin.Context) {
 			Email:              email,
 			Phone:              normalized,
 			MustChangePassword: true,
-			Status:             "active",
+			Status:             memberStatusPendingEnrollment,
 		}
 		if usn != "" {
 			member.USN = &usn
@@ -226,7 +246,17 @@ func (s *Server) createMember(c *gin.Context) {
 		if section != "" {
 			member.Section = &section
 		}
-		return tx.Create(&member).Error
+		if err := tx.Create(&member).Error; err != nil {
+			return err
+		}
+		enrollmentSession = models.MemberEnrollmentSession{
+			SessionUID:    sessionUID,
+			MemberID:      member.ID,
+			RequestedByID: requestedByID,
+			Status:        enrollmentStatusPendingDetails,
+			IsActive:      true,
+		}
+		return tx.Create(&enrollmentSession).Error
 	})
 	if err != nil {
 		s.Log.Error("member creation failed", "error", err)
@@ -240,15 +270,19 @@ func (s *Server) createMember(c *gin.Context) {
 		return
 	}
 
-	s.audit(c, "member_created_by_admin", "Member", &member.ID, gin.H{
-		"login_id":      member.LoginID,
-		"academic_year": member.AcademicYear,
-		"created_by":    currentUser(c).Email,
+	member.EnrollmentStatus = enrollmentStatusPendingDetails
+	s.audit(c, "member_registration_started", "Member", &member.ID, gin.H{
+		"login_id":          member.LoginID,
+		"academic_year":     member.AcademicYear,
+		"created_by":        currentUser(c).Email,
+		"registration_step": "pending_fingerprint_enrollment",
+		"session_uid":       enrollmentSession.SessionUID,
 	})
 	c.JSON(http.StatusCreated, gin.H{
-		"success": true,
-		"message": "Member account created successfully",
-		"member":  serializeManagedMemberFull(&member, &user),
+		"success":    true,
+		"message":    "Member details saved. Complete fingerprint enrollment to activate the account.",
+		"member":     serializeManagedMemberFull(&member, &user),
+		"enrollment": serializeEnrollmentSession(&enrollmentSession, &member, nil),
 	})
 }
 
@@ -267,7 +301,24 @@ func (s *Server) showMember(c *gin.Context) {
 		fail(c, http.StatusNotFound, "Record not found")
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "member": serializeManagedMemberFull(&member, &user)})
+
+	var enrollment any
+	session, err := s.latestEnrollmentSession(c.Request.Context(), member.ID)
+	if err == nil {
+		if member.Status == memberStatusPendingEnrollment {
+			member.EnrollmentStatus = session.Status
+		}
+		device := s.loadEnrollmentDevice(c.Request.Context(), session.DeviceRegistrationID)
+		enrollment = serializeEnrollmentSession(session, &member, device)
+	} else if member.Status == memberStatusPendingEnrollment {
+		member.EnrollmentStatus = enrollmentStatusPendingDetails
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"member":     serializeManagedMemberFull(&member, &user),
+		"enrollment": enrollment,
+	})
 }
 
 func (s *Server) updateMemberStatus(c *gin.Context) {
@@ -290,6 +341,10 @@ func (s *Server) updateMemberStatus(c *gin.Context) {
 	var member models.Member
 	if err := s.DB.WithContext(c.Request.Context()).First(&member, id).Error; err != nil {
 		fail(c, http.StatusNotFound, "Record not found")
+		return
+	}
+	if member.Status == memberStatusPendingEnrollment {
+		fail(c, http.StatusUnprocessableEntity, "Complete or cancel fingerprint enrollment before changing this member's status")
 		return
 	}
 	if member.Status == newStatus {
@@ -533,6 +588,10 @@ func (s *Server) deactivateMember(c *gin.Context) {
 		fail(c, http.StatusNotFound, "Record not found")
 		return
 	}
+	if member.Status == memberStatusPendingEnrollment {
+		fail(c, http.StatusUnprocessableEntity, "Cancel fingerprint enrollment before deactivating this member")
+		return
+	}
 
 	now := time.Now().UTC()
 	ctx := c.Request.Context()
@@ -560,4 +619,3 @@ func (s *Server) deactivateMember(c *gin.Context) {
 	})
 	c.JSON(http.StatusOK, gin.H{"success": true, "message": "Member account deactivated successfully"})
 }
-

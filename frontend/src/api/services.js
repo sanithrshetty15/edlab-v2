@@ -54,6 +54,12 @@ export const membersManagementApi = {
     api.patch(`${BASE}/members-management/${id}/_fields`, fields),
   forcePasswordReset: (id) =>
     api.patch(`${BASE}/members-management/${id}/force-password-reset`, {}),
+  startFingerprintEnrollment: (id, payload = {}) =>
+    api.post(`${BASE}/members-management/${id}/fingerprint-enrollment`, payload),
+  getFingerprintEnrollment: (id) =>
+    api.get(`${BASE}/members-management/${id}/fingerprint-enrollment`),
+  cancelFingerprintEnrollment: (id) =>
+    api.delete(`${BASE}/members-management/${id}/fingerprint-enrollment`),
   deactivate: (id) => api.delete(`${BASE}/members-management/${id}`),
 };
 

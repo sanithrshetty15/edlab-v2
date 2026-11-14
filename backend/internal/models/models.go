@@ -52,6 +52,10 @@ type Member struct {
 	CreatedAt          time.Time      `json:"created_at"`
 	UpdatedAt          time.Time      `json:"updated_at"`
 
+	// EnrollmentStatus is populated by management serializers from the latest
+	// member enrollment session. It is not persisted on the members table.
+	EnrollmentStatus string `gorm:"-" json:"enrollment_status,omitempty"`
+
 	// Relations
 	User                   User                   `gorm:"foreignKey:UserID" json:"-"`
 	AttendanceLogs         []AttendanceLog        `gorm:"foreignKey:MemberID" json:"-"`
@@ -107,14 +111,41 @@ type BiometricEnrollment struct {
 	ID                   int64     `gorm:"primaryKey" json:"id"`
 	MemberID             int64     `json:"member_id"`
 	DeviceRegistrationID int64     `json:"device_registration_id"`
-	DeviceUserID         string    `json:"device_user_id"`                  // Device-internal template identifier
-	Status               string    `gorm:"default:'pending'" json:"status"` // pending, enrolled, verified
+	ReaderKey            *string   `gorm:"size:32" json:"reader_key,omitempty"` // login, logout, dedicated; null for legacy mappings
+	DeviceUserID         string    `json:"device_user_id"`                      // Device-internal template identifier
+	FingerprintSlot      *int      `json:"fingerprint_slot,omitempty"`          // R307S template slot
+	Status               string    `gorm:"default:'pending'" json:"status"`     // pending, enrolled, verified
 	CreatedAt            time.Time `json:"created_at"`
 	UpdatedAt            time.Time `json:"updated_at"`
 
 	// Relations
 	Member             Member             `gorm:"foreignKey:MemberID" json:"-"`
 	DeviceRegistration DeviceRegistration `gorm:"foreignKey:DeviceRegistrationID" json:"-"`
+}
+
+// MemberEnrollmentSession tracks the two-scan fingerprint enrollment that must
+// finish before a newly created member account is activated.
+type MemberEnrollmentSession struct {
+	ID                   int64      `gorm:"primaryKey" json:"id"`
+	SessionUID           string     `gorm:"not null;uniqueIndex" json:"session_uid"`
+	MemberID             int64      `gorm:"index" json:"member_id"`
+	RequestedByID        int64      `json:"requested_by_id"`
+	DeviceRegistrationID *int64     `json:"device_registration_id,omitempty"`
+	ReaderKey            *string    `gorm:"size:32" json:"reader_key,omitempty"`
+	Status               string     `gorm:"not null;default:'pending_details';index" json:"status"`
+	FingerprintSlot      *int       `json:"fingerprint_slot,omitempty"`
+	DeviceUserID         *string    `json:"device_user_id,omitempty"`
+	Attempts             int        `gorm:"not null;default:0" json:"attempts"`
+	ErrorCode            *string    `json:"error_code,omitempty"`
+	ErrorMessage         *string    `json:"error_message,omitempty"`
+	CleanupRequired      bool       `gorm:"not null;default:false" json:"cleanup_required"`
+	IsActive             bool       `gorm:"not null;default:true;index" json:"is_active"`
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	StartedAt            *time.Time `json:"started_at,omitempty"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	CleanupCompletedAt   *time.Time `json:"cleanup_completed_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // DeviceRegistration represents a fingerprint/biometric device registration
@@ -133,6 +164,21 @@ type DeviceRegistration struct {
 
 	// Relations
 	BiometricEnrollments []BiometricEnrollment `gorm:"foreignKey:DeviceRegistrationID" json:"-"`
+	Readers              []DeviceReader        `gorm:"foreignKey:DeviceRegistrationID" json:"-"`
+}
+
+// DeviceReader is a reader reported by an ESP32 controller. The backend only
+// stores availability metadata; fingerprint templates remain on the sensor.
+type DeviceReader struct {
+	ID                   int64      `gorm:"primaryKey" json:"id"`
+	DeviceRegistrationID int64      `gorm:"not null;uniqueIndex:idx_device_readers_device_key;index" json:"device_registration_id"`
+	ReaderKey            string     `gorm:"not null;size:32;uniqueIndex:idx_device_readers_device_key" json:"reader_key"` // login, logout, dedicated
+	Label                string     `gorm:"not null;size:64" json:"label"`
+	UART                 int        `gorm:"not null;default:0" json:"uart"`
+	Connected            bool       `gorm:"not null;default:false" json:"connected"`
+	LastSeenAt           *time.Time `json:"last_seen_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // DeviceEvent represents a fingerprint scan or device event

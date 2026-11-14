@@ -210,6 +210,44 @@ Security notes:
 - Only provisioning and rotation responses return `api_key`, once each, with `no-store`.
 - `BIOMETRIC_API_SECRET` remains independent of per-device keys; the optional HMAC-only event path is not invalidated by rotating a device key.
 
+### Member fingerprint enrollment
+
+Creating a member through `POST /api/v1/members-management` now creates an
+inactive `pending_enrollment` member and a `pending_details` session; it does
+not activate the member. An administrator then starts fingerprint enrollment:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/members-management/:id/fingerprint-enrollment` | POST | Start or resume enrollment |
+| `/api/v1/members-management/:id/fingerprint-enrollment` | GET | Read the latest session |
+| `/api/v1/members-management/:id/fingerprint-enrollment` | DELETE | Cancel and delete the pending member |
+
+Device session routes use `X-Device-Token` and are polled by the ESP32:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/biometric/enrollment-session` | GET | Claim cleanup or active work |
+| `/api/v1/biometric/enrollment-sessions/:uid` | GET | Read status/cancellation/expiry |
+| `/api/v1/biometric/enrollment-sessions/:uid/progress` | POST | Report two-scan progress |
+| `/api/v1/biometric/enrollment-sessions/:uid/complete` | POST | Finalize slot and activate member |
+| `/api/v1/biometric/enrollment-sessions/:uid/fail` | POST | Report failure |
+| `/api/v1/biometric/enrollment-sessions/:uid/cleanup` | POST | Acknowledge local cleanup |
+
+Session statuses are `pending_details`, `awaiting_sensor`,
+`waiting_first_scan`, `first_scan_captured`, `waiting_for_removal`,
+`waiting_second_scan`, `second_scan_captured`, `verifying`, `finalized`,
+`failed`, `cancelled`, and `expired`. Sessions expire after 10 minutes.
+Completion is transactional and idempotent: the backend locks the session and
+member, verifies the pending state, slot range, slot ownership, and expiry,
+then creates the biometric enrollment and activates the member. Templates are
+never uploaded; only `device_user_id` and `fingerprint_slot` are stored.
+
+Cancellation deletes the pending member/user but keeps the session so the
+device can clean up any stored template. When a slot is already owned by
+another member, finalization marks the session failed with
+`cleanup_required=false` so the device does not erase another member's
+template.
+
 ### Rate limiting
 
 `RATE_LIMIT_REQUESTS` (100) and `RATE_LIMIT_PERIOD_SECONDS` (60).
@@ -220,7 +258,7 @@ Security notes:
 - `POST /api/v1/auth/...` — member/admin login, logout, session refresh, password reset
 - `/api/v1/members`, `/api/v1/members-management`, `/api/v1/admins` — member and admin management
 - `/api/v1/attendance` — attendance list, today, summary, analytics, manual entry, logout
-- `/api/v1/biometric` — device authentication, fingerprint enrollment, status, event submission/sync
+- `/api/v1/biometric` — device authentication, two-scan fingerprint enrollment sessions, status, event submission/sync
 - `/api/v1/devices` — admin device provisioning, listing, key rotation, revocation
 - `/api/v1/borrowing`, `/api/v1/returns`, `/api/v1/inventory` — inventory workflow
 - `/api/v1/messages`, `/api/v1/announcements`, `/api/v1/notifications` — communication
@@ -244,6 +282,13 @@ The device lifecycle test uses a real PostgreSQL database and is skipped unless 
 ```bash
 TEST_DATABASE_URL='postgres://user:password@localhost:5432/edwinslab_test?sslmode=disable' \
   go test ./internal/api -run TestDeviceProvisioningLifecycleIntegration -v
+```
+
+The two-scan enrollment tests are also integration-only:
+
+```bash
+TEST_DATABASE_URL='postgres://user:password@localhost:5432/edwinslab_test?sslmode=disable' \
+  go test ./internal/api -run TestMemberFingerprintEnrollment -v
 ```
 
 ## Docker

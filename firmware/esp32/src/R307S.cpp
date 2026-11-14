@@ -1,7 +1,11 @@
 #include "R307S.h"
 
 R307S::R307S(int uartNum, int rxPin, int txPin)
-    : uartNum_(uartNum), rxPin_(rxPin), txPin_(txPin), serial_(nullptr) {}
+    : uartNum_(uartNum),
+      rxPin_(rxPin),
+      txPin_(txPin),
+      serial_(nullptr),
+      lastConfirmation_(R307S_NO_CONFIRMATION) {}
 
 bool R307S::begin() {
   if (serial_ == nullptr) {
@@ -33,6 +37,7 @@ uint16_t R307S::checksum16(const uint8_t* data, size_t len) const {
 
 bool R307S::execute(uint8_t command, const uint8_t* param, size_t paramLen,
                     uint8_t* out, size_t maxOut, size_t& outLen) {
+  lastConfirmation_ = R307S_NO_CONFIRMATION;
   if (serial_ == nullptr) {
     return false;
   }
@@ -71,6 +76,7 @@ bool R307S::execute(uint8_t command, const uint8_t* param, size_t paramLen,
 
 bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen) {
   outLen = 0;
+  lastConfirmation_ = R307S_NO_CONFIRMATION;
   if (serial_ == nullptr) {
     return false;
   }
@@ -132,6 +138,7 @@ bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen) {
   }
 
   uint8_t confirmation = payload[0];
+  lastConfirmation_ = confirmation;
   size_t dataLen = static_cast<size_t>(length) - 3; // minus confirmation + checksum
   if (out != nullptr && maxOut > 0) {
     size_t copy = dataLen < maxOut ? dataLen : maxOut;
@@ -176,20 +183,29 @@ bool R307S::storeModel(uint16_t slotId) {
 }
 
 bool R307S::search(uint16_t& fingerId) {
+  return searchRange(1, 127, fingerId);
+}
+
+bool R307S::searchRange(uint16_t startSlot, uint16_t slotCount, uint16_t& fingerId) {
+  fingerId = 0;
+  if (startSlot < 1 || startSlot > 127 || slotCount == 0 || slotCount > 127 ||
+      static_cast<uint32_t>(startSlot) + slotCount > 128) {
+    return false;
+  }
   uint8_t param[5] = {
-      0x01, 0x00, 0x00, // character buffer 1, start slot 0
-      0x00, 0xFF        // search 255 slots
+      0x01, // character buffer 1
+      static_cast<uint8_t>((startSlot >> 8) & 0xFF),
+      static_cast<uint8_t>(startSlot & 0xFF),
+      static_cast<uint8_t>((slotCount >> 8) & 0xFF),
+      static_cast<uint8_t>(slotCount & 0xFF),
   };
-  uint8_t data[8];
+  uint8_t data[4];
   size_t outLen = 0;
-  if (!execute(R307S_SEARCH, param, sizeof(param), data, sizeof(data), outLen)) {
-    return false;
+  bool ok = execute(R307S_SEARCH, param, sizeof(param), data, sizeof(data), outLen);
+  if (outLen >= 2) {
+    fingerId = static_cast<uint16_t>((data[0] << 8) | data[1]);
   }
-  if (outLen < 2) {
-    return false;
-  }
-  fingerId = static_cast<uint16_t>((data[0] << 8) | data[1]);
-  return fingerId > 0;
+  return ok && fingerId > 0 && fingerId < 0xFFFF;
 }
 
 bool R307S::searchMatch(uint8_t* buffer, int& id) {
@@ -200,6 +216,59 @@ bool R307S::searchMatch(uint8_t* buffer, int& id) {
   }
   id = fingerId;
   return true;
+}
+
+bool R307S::match(uint16_t& score) {
+  score = 0;
+  uint8_t data[2];
+  size_t outLen = 0;
+  bool ok = execute(R307S_MATCH, nullptr, 0, data, sizeof(data), outLen);
+  if (outLen >= 2) {
+    score = static_cast<uint16_t>((data[0] << 8) | data[1]);
+  }
+  return ok;
+}
+
+bool R307S::loadChar(uint8_t bufferId, uint16_t slotId) {
+  uint8_t param[3] = {
+      bufferId,
+      static_cast<uint8_t>((slotId >> 8) & 0xFF),
+      static_cast<uint8_t>(slotId & 0xFF),
+  };
+  size_t outLen = 0;
+  return execute(R307S_LOADCHAR, param, sizeof(param), nullptr, 0, outLen);
+}
+
+bool R307S::templateExists(uint16_t slotId, bool& exists) {
+  exists = false;
+  if (slotId < 1 || slotId > 127) {
+    return false;
+  }
+  if (loadChar(2, slotId)) {
+    exists = true;
+    return true;
+  }
+  if (lastConfirmation_ == R307S_ERR_EMPTY || lastConfirmation_ == R307S_ERR_NOTFOUND) {
+    return true;
+  }
+  return false;
+}
+
+bool R307S::deleteModel(uint16_t slotId) {
+  if (slotId < 1 || slotId > 127) {
+    return false;
+  }
+  uint8_t param[2] = {
+      static_cast<uint8_t>((slotId >> 8) & 0xFF),
+      static_cast<uint8_t>(slotId & 0xFF),
+  };
+  size_t outLen = 0;
+  bool ok = execute(R307S_DELCHAR, param, sizeof(param), nullptr, 0, outLen);
+  return ok || lastConfirmation_ == R307S_ERR_EMPTY;
+}
+
+uint8_t R307S::lastConfirmation() const {
+  return lastConfirmation_;
 }
 
 int R307S::getTemplateID() {

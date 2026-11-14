@@ -23,7 +23,7 @@ type memberLoginRequest struct {
 
 type adminLoginRequest struct {
 	Email    string `json:"email"`
-	Password string `json:"password"`
+	OTP      string `json:"otp"`
 }
 
 type changePasswordRequest struct {
@@ -154,8 +154,8 @@ func (s *Server) adminLogin(c *gin.Context) {
 		return
 	}
 	email := strings.ToLower(strings.TrimSpace(request.Email))
-	if email == "" || request.Password == "" {
-		fail(c, http.StatusUnprocessableEntity, "Email and password are required")
+	if email == "" {
+		fail(c, http.StatusUnprocessableEntity, "Email is required")
 		return
 	}
 
@@ -170,35 +170,24 @@ func (s *Server) adminLogin(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "Unable to sign in")
 		return
 	}
-	if user.Role != "admin" || !user.Active || user.PasswordDigest == nil || !s.Security.VerifyHash(request.Password, *user.PasswordDigest) {
+	if user.Role != "admin" || !user.Active {
 		fail(c, http.StatusUnauthorized, "Invalid login credentials")
 		return
 	}
 
-	var admin models.Admin
-	if err := s.DB.WithContext(c.Request.Context()).Where("user_id = ?", user.ID).First(&admin).Error; err != nil {
-		fail(c, http.StatusUnauthorized, "Invalid login credentials")
-		return
-	}
-
-	token, _, err := s.createSession(c, &user)
+	code, err := s.issueEmailOTP(c, &user, "admin_login")
 	if err != nil {
-		s.Log.Error("admin session creation failed", "error", err)
-		fail(c, http.StatusInternalServerError, "Unable to sign in")
+		s.Log.Error("admin OTP issuance failed", "user_id", user.ID, "error", err)
+		fail(c, http.StatusInternalServerError, "Unable to send verification code")
 		return
 	}
+	_ = code
 
-	s.audit(c, "admin_login", "User", &user.ID, nil)
+	s.audit(c, "admin_login", "User", &user.ID, gin.H{"purpose": "admin_login"})
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": "Admin login successful",
-		"token":   token,
-		"admin": gin.H{
-			"id":         admin.ID,
-			"name":       admin.Name,
-			"email":      user.Email,
-			"is_primary": admin.IsPrimary,
-		},
+		"message": "Verification code sent to administrator email",
+		"purpose":  "admin_login",
 	})
 }
 
@@ -536,6 +525,99 @@ func maskEmail(value string) string {
 		return "***"
 	}
 	return parts[0][:1] + "***@" + parts[1]
+}
+
+func (s *Server) verifyAdminOTP(c *gin.Context) {
+	var request struct {
+		OTP string `json:"otp"`
+	}
+	if !bindJSON(c, &request) {
+		return
+	}
+	code := strings.TrimSpace(request.OTP)
+	if code == "" {
+		fail(c, http.StatusUnprocessableEntity, "OTP is required")
+		return
+	}
+
+	ctx := c.Request.Context()
+	// Look up the OTP code for this user and purpose
+	var otp models.OTPCode
+	err := s.DB.WithContext(ctx).Model(&models.OTPCode{}).
+		Where("purpose = ? AND delivery_method = ? AND expires_at > ?",
+			"admin_login", "email", time.Now().UTC()).
+		Order("created_at DESC").
+		First(&otp).Error
+	if err != nil {
+		fail(c, http.StatusUnprocessableEntity, "Invalid or expired verification code")
+		return
+	}
+
+	// Get the user associated with this OTP
+	var user models.User
+	err = s.DB.WithContext(ctx).Model(&models.User{}).Where("id = ?", otp.UserID).First(&user).Error
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "Unable to retrieve user")
+		return
+	}
+
+	valid := s.Security.ValidateOTP(code, otp.OTPDigest)
+	if !valid {
+		err = s.DB.WithContext(ctx).Model(&models.OTPCode{}).
+			Where("user_id = ? AND purpose = ?", otp.UserID, "admin_login").
+			Update("attempts", gorm.Expr("attempts + 1")).Error
+		if err != nil {
+			s.Log.Error("OTP attempt increment failed", "user_id", otp.UserID, "error", err)
+		}
+		// Check attempt limit
+		attempts := 0
+		s.DB.WithContext(ctx).Model(&models.OTPCode{}).
+			Where("user_id = ? AND purpose = ?", otp.UserID, "admin_login").
+			Select("COALESCE(attempts, 0)").
+			First(&attempts)
+		if attempts >= s.Config.OTPMaxAttempts {
+			fail(c, http.StatusUnprocessableEntity, "Maximum verification attempts exceeded. Try again later or request a new code.")
+			return
+		}
+		fail(c, http.StatusUnprocessableEntity, "Invalid or expired verification code")
+		return
+	}
+
+	if valid {
+		// Clear used OTP
+		s.DB.WithContext(ctx).Model(&models.OTPCode{}).
+			Where("user_id = ? AND purpose = ?", otp.UserID, "admin_login").
+			Update("used", true)
+
+		token, _, err := s.createSession(c, &user)
+		if err != nil {
+			s.Log.Error("admin session creation failed", "error", err)
+			fail(c, http.StatusInternalServerError, "Unable to sign in")
+			return
+		}
+
+		var admin models.Admin
+		if err := s.DB.WithContext(c.Request.Context()).Where("user_id = ?", user.ID).First(&admin).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "Unable to retrieve admin profile")
+			return
+		}
+
+		s.audit(c, "admin_login", "User", &user.ID, nil)
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"message": "Admin login successful",
+			"token":   token,
+			"admin": gin.H{
+				"id":         admin.ID,
+				"name":       admin.Name,
+				"email":      user.Email,
+				"is_primary": admin.IsPrimary,
+			},
+		})
+		return
+	}
+
+	fail(c, http.StatusUnprocessableEntity, "Invalid or expired verification code")
 }
 
 func normalizedPhone(value string) (string, bool) {

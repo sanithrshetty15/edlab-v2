@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { membersManagementApi } from "../../../api/services";
 import { useApiResource } from "../../../hooks/useApiResource";
+import MemberEnrollmentDialog from "./MemberEnrollmentDialog";
 import { ConfirmDialog, Modal } from "../../../components/app/Modal";
 import {
   Alert,
@@ -42,6 +43,7 @@ import {
 const STATUS_OPTIONS = [
   { value: "", label: "All statuses" },
   { value: "active", label: "Active" },
+  { value: "pending_enrollment", label: "Awaiting fingerprint" },
   { value: "inactive", label: "Inactive" },
   { value: "deactivated", label: "Deactivated" },
 ];
@@ -292,8 +294,8 @@ function CreateMemberDialog({ onClose, onCreated }) {
     <Modal
       open
       onClose={onClose}
-      title="Add member account"
-      description="Create the official member record and sign-in credentials. Public registration is disabled."
+      title="Add member · Step 1 of 2"
+      description="Create the official member record and sign-in credentials. The account stays inactive until fingerprint enrollment is complete."
       size="lg"
       footer={
         <>
@@ -301,7 +303,7 @@ function CreateMemberDialog({ onClose, onCreated }) {
             Cancel
           </AppButton>
           <AppButton form="create-member-form" type="submit" variant="primary" loading={saving}>
-            Create member
+            Save details & continue
           </AppButton>
         </>
       }
@@ -429,10 +431,12 @@ function CreateMemberDialog({ onClose, onCreated }) {
 
 function MemberDetail({
   member,
+  enrollment,
   loading,
   error,
   onClose,
   onEdit,
+  onEnroll,
   onForceReset,
   onDeactivate,
   onStatusChange,
@@ -452,10 +456,16 @@ function MemberDetail({
             <KeyIcon className="h-4 w-4" />
             Force password reset
           </AppButton>
-          <AppButton variant="primary" onClick={onEdit} disabled={!member}>
+          <AppButton variant="outline" onClick={onEdit} disabled={!member}>
             <EditIcon className="h-4 w-4" />
             Edit fields
           </AppButton>
+          {member?.status === "pending_enrollment" && (
+            <AppButton variant="primary" onClick={onEnroll}>
+              <ShieldIcon className="h-4 w-4" />
+              Fingerprint enrollment
+            </AppButton>
+          )}
         </>
       }
     >
@@ -469,7 +479,16 @@ function MemberDetail({
             <Avatar name={member.name} size="lg" />
             <div>
               <div className="lab-member-detail__badges">
-                <StatusBadge status={member.status} />
+                <StatusBadge status={member.status}>
+                  {member.status === "pending_enrollment" ? "Awaiting fingerprint" : undefined}
+                </StatusBadge>
+                {member.status === "pending_enrollment" && (
+                  <Badge tone="warning">
+                    {enrollment?.status
+                      ? `Enrollment: ${titleCase(enrollment.status)}`
+                      : "Enrollment not started"}
+                  </Badge>
+                )}
                 {member.must_change_password && <Badge tone="warning">Password reset required</Badge>}
                 {member.phone_verified && <Badge tone="success">Phone verified</Badge>}
               </div>
@@ -481,20 +500,27 @@ function MemberDetail({
 
           <div className="lab-member-detail__section">
             <h3>Status</h3>
-            <div className="lab-member-detail__status-actions">
-              {["active", "inactive", "deactivated"].map((status) => (
-                <AppButton
-                  key={status}
-                  variant={member.status === status ? "primary" : "outline"}
-                  size="sm"
-                  disabled={member.status === status || Boolean(statusBusy)}
-                  loading={statusBusy === status}
-                  onClick={() => onStatusChange(status)}
-                >
-                  {titleCase(status)}
-                </AppButton>
-              ))}
-            </div>
+            {member.status === "pending_enrollment" ? (
+              <Alert tone="warning" title="Fingerprint enrollment required">
+                This account cannot be activated until the member completes two matching
+                fingerprint scans on the enrollment reader.
+              </Alert>
+            ) : (
+              <div className="lab-member-detail__status-actions">
+                {["active", "inactive", "deactivated"].map((status) => (
+                  <AppButton
+                    key={status}
+                    variant={member.status === status ? "primary" : "outline"}
+                    size="sm"
+                    disabled={member.status === status || Boolean(statusBusy)}
+                    loading={statusBusy === status}
+                    onClick={() => onStatusChange(status)}
+                  >
+                    {titleCase(status)}
+                  </AppButton>
+                ))}
+              </div>
+            )}
           </div>
 
           <DefinitionList
@@ -569,16 +595,18 @@ function MemberDetail({
             </div>
           </div>
 
-          <div className="lab-member-detail__danger">
-            <div>
-              <h3>Deactivate member</h3>
-              <p>Revokes access and marks the member record as deactivated.</p>
+          {member.status !== "pending_enrollment" && (
+            <div className="lab-member-detail__danger">
+              <div>
+                <h3>Deactivate member</h3>
+                <p>Revokes access and marks the member record as deactivated.</p>
+              </div>
+              <AppButton variant="danger" onClick={onDeactivate}>
+                <XCircleIcon className="h-4 w-4" />
+                Deactivate
+              </AppButton>
             </div>
-            <AppButton variant="danger" onClick={onDeactivate}>
-              <XCircleIcon className="h-4 w-4" />
-              Deactivate
-            </AppButton>
-          </div>
+          )}
         </div>
       ) : null}
     </Modal>
@@ -590,10 +618,12 @@ export default function MembersPage() {
   const [filters, setFilters] = useState({ search: "", status: "", year: "", page: 1 });
   const [selectedId, setSelectedId] = useState(null);
   const [detail, setDetail] = useState(null);
+  const [detailEnrollment, setDetailEnrollment] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
+  const [enrolling, setEnrolling] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -617,11 +647,13 @@ export default function MembersPage() {
   const loadMember = async (id) => {
     setSelectedId(id);
     setDetail(null);
+    setDetailEnrollment(null);
     setDetailLoading(true);
     setDetailError(null);
     try {
       const result = await membersManagementApi.get(id);
       setDetail(result.member);
+      setDetailEnrollment(result.enrollment || null);
     } catch (error) {
       setDetailError(error);
     } finally {
@@ -633,6 +665,7 @@ export default function MembersPage() {
     if (!selectedId) return;
     const result = await membersManagementApi.get(selectedId);
     setDetail(result.member);
+    setDetailEnrollment(result.enrollment || null);
   };
 
   const handleStatusChange = async (status) => {
@@ -795,12 +828,26 @@ export default function MembersPage() {
                           </small>
                         </div>
                       </td>
-                      <td><StatusBadge status={member.status} /></td>
+                      <td>
+                        <StatusBadge status={member.status}>
+                          {member.status === "pending_enrollment"
+                            ? "Awaiting fingerprint"
+                            : undefined}
+                        </StatusBadge>
+                      </td>
                       <td>
                         <div className="lab-member-account">
-                          <Badge tone={member.must_change_password ? "warning" : "success"}>
-                            {member.must_change_password ? "Reset pending" : "Password set"}
-                          </Badge>
+                          {member.status === "pending_enrollment" ? (
+                            <Badge tone="warning">
+                              {member.enrollment_status
+                                ? titleCase(member.enrollment_status.replaceAll("_", " "))
+                                : "Enrollment not started"}
+                            </Badge>
+                          ) : (
+                            <Badge tone={member.must_change_password ? "warning" : "success"}>
+                              {member.must_change_password ? "Reset pending" : "Password set"}
+                            </Badge>
+                          )}
                           {member.phone_verified && <Badge tone="info">Phone verified</Badge>}
                         </div>
                       </td>
@@ -832,15 +879,18 @@ export default function MembersPage() {
       {(selectedId || detailLoading) && (
         <MemberDetail
           member={detail}
+          enrollment={detailEnrollment}
           loading={detailLoading}
           error={detailError}
           statusBusy={actionBusy}
           onClose={() => {
             setSelectedId(null);
             setDetail(null);
+            setDetailEnrollment(null);
             setDetailError(null);
           }}
           onEdit={() => setEditing(detail)}
+          onEnroll={() => setEnrolling({ member: detail, enrollment: detailEnrollment })}
           onForceReset={() => setConfirmAction({ type: "reset", member: detail })}
           onDeactivate={() => setConfirmAction({ type: "deactivate", member: detail })}
           onStatusChange={handleStatusChange}
@@ -852,8 +902,39 @@ export default function MembersPage() {
           onClose={() => setCreating(false)}
           onCreated={(result) => {
             setCreating(false);
-            setNotice(result.message || "Member account created.");
+            setNotice(
+              result.message ||
+                "Member details saved. Continue with fingerprint enrollment.",
+            );
             setFilters((current) => ({ ...current, page: 1 }));
+            resource.reload();
+            setEnrolling({
+              member: result.member,
+              enrollment: result.enrollment || null,
+            });
+          }}
+        />
+      )}
+
+      {enrolling && (
+        <MemberEnrollmentDialog
+          member={enrolling.member}
+          initialEnrollment={enrolling.enrollment}
+          onClose={() => setEnrolling(null)}
+          onFinalized={(result) => {
+            setNotice(result.message || "Fingerprint enrollment complete. Member activated.");
+            resource.reload();
+            if (selectedId && result.member?.id === selectedId) {
+              setDetail(result.member);
+              setDetailEnrollment(result.enrollment || null);
+            }
+          }}
+          onCancelled={(result) => {
+            setNotice(result.message || "Registration cancelled.");
+            setEnrolling(null);
+            setSelectedId(null);
+            setDetail(null);
+            setDetailEnrollment(null);
             resource.reload();
           }}
         />

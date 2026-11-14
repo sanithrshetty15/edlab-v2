@@ -13,6 +13,22 @@ struct EnrollmentInfo {
   bool valid = false;
 };
 
+// An admin-created fingerprint enrollment session owned by this device.
+struct EnrollmentSessionInfo {
+  String sessionUid;
+  String status;
+  String memberName;
+  String memberLoginId;
+  String errorCode;
+  String errorMessage;
+  int64_t memberId = 0;
+  int slot = 0;
+  int attempts = 0;
+  bool cleanupRequired = false;
+  bool active = false;
+  bool valid = false;
+};
+
 // Exchange DEVICE_API_KEY for a short-lived X-Device-Token.
 bool authenticateDevice();
 bool isDeviceAuthenticated();
@@ -31,6 +47,23 @@ bool submitBiometricEvent(const String& eventType,
 bool submitFingerprintEnrollment(int64_t memberId,
                                  const String& templateRef,
                                  const String& deviceUserId);
+
+// Enrollment session endpoints. httpCode is set whenever the request reached
+// the backend, including non-2xx responses, so callers can react to conflicts.
+bool fetchEnrollmentCommand(EnrollmentSessionInfo& out, String& action, int& httpCode);
+bool fetchEnrollmentSession(const String& sessionUid, EnrollmentSessionInfo& out,
+                            String& action, int& httpCode);
+bool updateEnrollmentProgress(const String& sessionUid, const String& status,
+                              int slot, const String& errorCode,
+                              const String& errorMessage,
+                              EnrollmentSessionInfo& out, int& httpCode);
+bool completeEnrollment(const String& sessionUid, int slot,
+                        EnrollmentSessionInfo& out, int& httpCode);
+bool failEnrollment(const String& sessionUid, int slot, const String& errorCode,
+                    const String& errorMessage, EnrollmentSessionInfo& out,
+                    int& httpCode);
+bool acknowledgeEnrollmentCleanup(const String& sessionUid, int slot,
+                                  EnrollmentSessionInfo& out, int& httpCode);
 
 // GET /api/v1/biometric/status. Returns pending event count.
 bool fetchDeviceStatus(int& pendingEvents);
