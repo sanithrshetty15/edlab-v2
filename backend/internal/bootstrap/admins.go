@@ -42,7 +42,7 @@ var requiredAdmins = []adminSpec{
 	{
 		Name:        "Edwins LAB",
 		Email:       "edwins@aiet.org.in",
-		Phone:       "+919380455051",
+		Phone:       "+916362085651",
 		PasswordEnv: "ADMIN_THREE_PASSWORD",
 		Primary:     false,
 	},
