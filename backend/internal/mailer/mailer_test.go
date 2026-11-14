@@ -15,7 +15,7 @@ func TestRegistrationConfirmationEmail(t *testing.T) {
 		AcademicYear:    2,
 	})
 
-	if !strings.Contains(body, "Registration successful") {
+	if !strings.Contains(body, "Membership registration successful") {
 		t.Fatal("registration email is missing its heading")
 	}
 	if !strings.Contains(body, "https://edwinslab.in/login") {
@@ -27,7 +27,7 @@ func TestRegistrationConfirmationEmail(t *testing.T) {
 	if strings.Contains(body, "<script>") {
 		t.Fatal("registration email did not escape the member name")
 	}
-	if RegistrationConfirmationSubject != "Welcome to Edwins Lab – Registration Successful!" {
+	if RegistrationConfirmationSubject != "EdwinsLab – Membership Registration Successful" {
 		t.Fatalf("unexpected subject: %q", RegistrationConfirmationSubject)
 	}
 }

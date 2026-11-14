@@ -1,11 +1,12 @@
 # Edwins Lab ESP32 Firmware
 
 Firmware for the Edwins Lab biometric attendance and door access controller:
-ESP32-WROOM-32UE (ALF V1.0), two R307S fingerprint readers, a fail-safe
-electromagnetic lock, an emergency exit button, status LEDs and a buzzer.
+ESP32-WROOM-32UE (ALF V1.0), one R307S entry reader, a fail-safe
+electromagnetic lock, a push-button exit, status LEDs and a buzzer.
 
 The controller talks to the Go backend in `backend/` for device
-authentication, member enrolment and attendance events.
+authentication, member enrolment, synchronous door authorization, and
+attendance events.
 
 ## Build support
 
@@ -16,7 +17,7 @@ firmware/esp32/
 ├── platformio.ini
 ├── src/
 │   ├── main.cpp            # ONLY setup() and loop()
-│   ├── R307S.h/.cpp        # R307S UART driver (two independent readers)
+│   ├── R307S.h/.cpp        # R307S UART driver (single entry reader)
 │   ├── enrollment_flow.h   # Pure two-scan enrollment state machine
 │   ├── wifi_manager.h/.cpp # Non-blocking Wi-Fi management
 │   ├── device_auth.h/.cpp  # Backend device auth + biometric events
@@ -79,19 +80,18 @@ and otherwise falls back to placeholder values.
 `DEVICE_HMAC_SECRET` is optional. Set it only when event HMAC signing is
 enabled; it must match the backend `BIOMETRIC_API_SECRET`.
 
-Enrollment is fail-closed by default. Set `ENROLLMENT_READER` to the reader the
-member will physically use for the two enrollment scans:
+The single entry reader is also the enrollment reader by default. Enrollment
+uses the same sensor the member will physically scan at the door:
 
 ```c
-// #define ENROLLMENT_READER ENROLLMENT_READER_LOGIN
-// #define ENROLLMENT_READER ENROLLMENT_READER_LOGOUT
+#define ENROLLMENT_READER ENROLLMENT_READER_LOGIN
 ```
 
-With the default `ENROLLMENT_READER_NONE`, the controller never claims backend
-enrollment sessions and login/logout continue to work normally. The ALF V1.0
-board has no spare UART for a third reader, so enrollment must share the login
-or logout sensor. The selected reader must be detected at boot or enrollment
-stays disabled.
+Set `ENROLLMENT_READER_NONE` only on a controller that must never enroll
+members. The legacy `ENROLLMENT_READER_LOGOUT` value is retained for source
+compatibility but now also maps to the single entry reader; the ALF V1.0 board
+has no second reader in this deployment. The entry reader must be detected at
+boot or enrollment stays disabled.
 
 ## Provisioning the device API key
 
@@ -164,16 +164,15 @@ secret and is not replaced by per-device key rotation.
 
 | Signal | GPIO | Notes |
 |--------|------|-------|
-| `LOGIN_RX` / `LOGIN_TX` | 16 / 17 | R307S login reader, UART2 |
-| `LOGOUT_RX` / `LOGOUT_TX` | 19 / 18 | R307S logout reader, UART1 |
+| `LOGIN_RX` / `LOGIN_TX` | 16 / 17 | R307S entry reader, UART2 |
 | `RELAY_PIN` | 25 | Electromagnetic lock |
 | `EXIT_BUTTON` | 33 | `INPUT_PULLUP`, pressed = LOW |
 | `GREEN_LED` | 23 | Status LED |
 | `RED_LED` | 22 | Status LED |
 | `BUZZER_PIN` | 21 | Active-HIGH |
 
-There is no third UART on the ALF V1.0 board. Enrollment reuses either the
-login or logout reader and must be selected explicitly in `config.h`.
+The legacy logout-reader pins are not used by this deployment. Enrollment and
+entry share the single entry reader.
 
 Relay levels are configurable in `config.h`:
 
@@ -269,17 +268,20 @@ Allowed event types on `/submit-event`: `fingerprint_scan`,
 
 ## Safety behaviour
 
-- **A local fingerprint match never unlocks the door on its own.** The door
-  unlocks only after the device is authenticated, the scanned template maps to
-  a member registered on the backend, and the `fingerprint_scan` event is
-  accepted.
-- **Emergency exit is local and immediate.** The exit button de-energises the
-  relay without Wi-Fi or backend access, then sounds the alarm. The lock stays
-  released until manual intervention.
-- **Emergency exit never creates a member logout event.** `emergency_exit` is
-  not a valid backend event type and is not sent.
-- Attendance events are submitted to the backend; the backend records the
-  login/logout from the queued `fingerprint_scan` event.
+- **A local fingerprint match never unlocks the door on its own.** The firmware
+  calls `POST /api/v1/biometric/door-access` and unlocks only when the backend
+  synchronously returns `authorized: true` for an active member and the slot
+  belongs to the entry reader. Backend errors and timeouts keep the door locked.
+- **Duplicate scans are acknowledged but do not re-unlock.** The backend
+  suppresses repeated grants for the same member within three seconds.
+- **Exit is local and immediate.** The GPIO33 button de-energises the relay
+  without Wi-Fi or backend access and the normal `DOOR_OPEN_MS` timer re-locks
+  the door automatically.
+- **Exit never creates a member logout event.** The button does not call the
+  backend and does not submit a biometric event.
+- Attendance is preserved through the backend: an authorized door-access request
+  creates a `fingerprint_scan` device event and the existing
+  `biometric.process_event` job records the login/logout.
 
 ## Verification status
 
@@ -299,14 +301,14 @@ Allowed event types on `/submit-event`: `fingerprint_scan`,
    every `WIFI_RETRY_INTERVAL` without blocking the loop.
 2. **`Device auth HTTP 401`** — `DEVICE_API_KEY` does not match a provisioned,
    active device in the backend.
-3. **Enrollment never starts** — confirm `ENROLLMENT_READER` is set to
-   `ENROLLMENT_READER_LOGIN` or `ENROLLMENT_READER_LOGOUT`, that reader was
-   detected at boot, and the member is still `pending_enrollment`.
-4. **Login denied, template not enrolled** — the finger matches on the sensor
-   but is not registered through the enrollment session workflow, so the door
-   stays locked by design.
-5. **No fingerprint detected** — verify the reader UART pins and that both
-   readers are powered; sensors run at 57600 baud.
+3. **Enrollment never starts** — confirm `ENROLLMENT_READER` is
+   `ENROLLMENT_READER_LOGIN` (the default), the entry reader was detected at
+   boot, and the member is still `pending_enrollment`.
+4. **Entry denied, fingerprint not enrolled** — the finger matches on the
+   sensor but the slot is not registered to an active member on this device, so
+   the backend keeps the door locked by design.
+5. **No fingerprint detected** — verify the entry reader UART pins and that the
+   reader is powered; sensors run at 57600 baud.
 6. **Door never unlocks** — confirm the relay active levels and that the device
    is authenticated and enrolled.
 7. **Enrollment stuck after a reboot** — the firmware reconciles the NVS

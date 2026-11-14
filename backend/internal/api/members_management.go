@@ -23,6 +23,15 @@ var (
 	memberPhoneExpr = regexp.MustCompile(`^\+?[1-9]\d{7,14}$`)
 )
 
+func isGmailAddress(email string) bool {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if !emailPattern.MatchString(email) {
+		return false
+	}
+	local, domain, found := strings.Cut(email, "@")
+	return found && local != "" && domain == "gmail.com"
+}
+
 type createMemberRequest struct {
 	Name                 string `json:"name"`
 	USN                  string `json:"usn"`
@@ -123,8 +132,8 @@ func (s *Server) createMember(c *gin.Context) {
 	}
 	if email == "" {
 		validationErrors = append(validationErrors, "Email is required")
-	} else if !emailPattern.MatchString(email) {
-		validationErrors = append(validationErrors, "Please provide a valid email address")
+	} else if !isGmailAddress(email) {
+		validationErrors = append(validationErrors, "Please provide a valid Gmail address ending in @gmail.com")
 	}
 	if usn != "" && !usnPattern.MatchString(usn) {
 		validationErrors = append(validationErrors, "USN must be 6-15 letters and digits")

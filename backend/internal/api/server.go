@@ -59,6 +59,7 @@ func (s *Server) Router() *gin.Engine {
 	s.registerMemberManagementRoutes(api)
 	s.registerAttendanceRoutes(api)
 	s.registerBiometricRoutes(api)
+	s.registerDoorAccessRoutes(api)
 	s.registerMessageRoutes(api)
 	s.registerNotificationRoutes(api)
 	s.registerAnnouncementRoutes(api)

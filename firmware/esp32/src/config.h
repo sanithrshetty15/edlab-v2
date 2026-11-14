@@ -67,14 +67,13 @@
 #endif
 
 // ===== FINGERPRINT ENROLLMENT READER =====
-// Enrollment is disabled unless explicitly pointed at one of the two readers.
-// The default is deliberately fail-closed: an unconfigured controller never
-// claims enrollment commands and never falls back to a login/logout reader.
+// The single entry reader is also the enrollment reader. Set this to
+// ENROLLMENT_READER_NONE only on a controller that must never enroll members.
 #define ENROLLMENT_READER_NONE 0
 #define ENROLLMENT_READER_LOGIN 1
 #define ENROLLMENT_READER_LOGOUT 2
 #ifndef ENROLLMENT_READER
-#define ENROLLMENT_READER ENROLLMENT_READER_NONE
+#define ENROLLMENT_READER ENROLLMENT_READER_LOGIN
 #endif
 #if ENROLLMENT_READER != ENROLLMENT_READER_NONE && \
     ENROLLMENT_READER != ENROLLMENT_READER_LOGIN && \

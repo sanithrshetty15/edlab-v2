@@ -263,8 +263,8 @@ function CreateMemberDialog({ onClose, onCreated }) {
       nextErrors.identifier = "USN must be 6-15 letters and digits.";
     }
     if (!values.email.trim()) nextErrors.email = "Gmail address is required.";
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
-      nextErrors.email = "Enter a valid Gmail address.";
+    else if (!/^[^\s@]+@gmail\.com$/i.test(values.email.trim())) {
+      nextErrors.email = "Enter a valid Gmail address ending in @gmail.com.";
     }
 
     setErrors(nextErrors);
@@ -292,7 +292,7 @@ function CreateMemberDialog({ onClose, onCreated }) {
     <Modal
       open
       onClose={onClose}
-      title="Add member · Basic details"
+      title="Add member · Member information"
       description="Start with the four details needed to create a member record."
       size="lg"
       footer={

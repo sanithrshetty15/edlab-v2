@@ -9,11 +9,12 @@
  *
  * Safety rules enforced below:
  *   - A local fingerprint match never unlocks the door by itself.
- *   - The door unlocks only after the backend authorises the device, the
- *     scanned template is registered to a member on the backend, and the
- *     fingerprint_scan event is accepted.
- *   - The emergency exit releases the lock locally, without Wi-Fi or backend.
- *   - Emergency exit never creates a member logout event.
+ *   - The door unlocks only after the backend synchronously authorises the
+ *     device, the fingerprint slot is registered to an active member, and the
+ *     slot belongs to the entry reader.
+ *   - The GPIO33 exit button releases the lock locally, without Wi-Fi or the
+ *     backend, and re-locks automatically after DOOR_OPEN_MS.
+ *   - The exit button never creates a member logout event.
  */
 
 #include "config.h"
@@ -31,16 +32,15 @@ namespace {
 
 enum SystemMode { MODE_IDLE, MODE_ENROLLMENT };
 
-R307S loginReader(LOGIN_UART, LOGIN_RX, LOGIN_TX);
-R307S logoutReader(LOGOUT_UART, LOGOUT_RX, LOGOUT_TX);
+// One physical R307S reader handles entry, attendance and fingerprint
+// enrollment. The legacy logout-reader configuration is intentionally unused.
+R307S entryReader(LOGIN_UART, LOGIN_RX, LOGIN_TX);
 
 R307S* enrollmentReader =
-#if ENROLLMENT_READER == ENROLLMENT_READER_LOGIN
-    &loginReader;
-#elif ENROLLMENT_READER == ENROLLMENT_READER_LOGOUT
-    &logoutReader;
-#else
+#if ENROLLMENT_READER == ENROLLMENT_READER_NONE
     nullptr;
+#else
+    &entryReader;
 #endif
 
 bool enrollmentReaderReady = false;
@@ -49,13 +49,11 @@ bool enrollmentDisabledLogged = false;
 SystemMode mode = MODE_IDLE;
 
 bool doorUnlocked = false;
-bool emergencyActive = false;
 unsigned long doorOpenedAt = 0;
 
 unsigned long alarmUntil = 0;
 
 unsigned long lastLoginScan = 0;
-unsigned long lastLogoutScan = 0;
 unsigned long lastHeartbeat = 0;
 unsigned long lastAuthAttempt = 0;
 unsigned long lastEnrollmentRefresh = 0;
@@ -152,10 +150,6 @@ void errorSignal() {
 }
 
 void lockDoor() {
-  if (emergencyActive) {
-    // After an emergency the lock stays released until manual intervention.
-    return;
-  }
   digitalWrite(RELAY_PIN, RELAY_LOCKED_LEVEL);
   doorUnlocked = false;
   Serial.println("Door locked");
@@ -169,19 +163,16 @@ void unlockDoor() {
 }
 
 void updateDoor() {
-  if (emergencyActive) {
-    return;
-  }
   if (doorUnlocked && millis() - doorOpenedAt >= DOOR_OPEN_MS) {
     lockDoor();
   }
 }
 
 // ---------------------------------------------------------------------------
-// Emergency exit (independent of Wi-Fi and backend)
+// Push-button exit (independent of Wi-Fi and backend)
 // ---------------------------------------------------------------------------
 
-void checkEmergencyExit() {
+void checkExitButton() {
   static bool lastReading = HIGH;
   static unsigned long lastChange = 0;
   static bool handled = false;
@@ -198,15 +189,13 @@ void checkEmergencyExit() {
 
   if (reading == LOW && !handled) {
     handled = true;
-    emergencyActive = true;
-    // Release the fail-safe lock immediately, before any backend call.
-    digitalWrite(RELAY_PIN, RELAY_UNLOCK_LEVEL);
-    doorUnlocked = true;
-    doorOpenedAt = millis();
-    digitalWrite(GREEN_LED, LOW);
-    digitalWrite(RED_LED, HIGH);
-    triggerAlarm(3000);
-    Serial.println("EMERGENCY EXIT: lock released locally");
+    // Release the fail-safe lock immediately, before any backend call. The
+    // normal updateDoor() timer re-locks the door after DOOR_OPEN_MS.
+    unlockDoor();
+    digitalWrite(GREEN_LED, HIGH);
+    digitalWrite(RED_LED, LOW);
+    buzzPattern(1);
+    Serial.println("EXIT BUTTON: lock released locally");
     // Deliberately no biometric event: an exit is not a member logout.
   } else if (reading == HIGH) {
     handled = false;
@@ -236,15 +225,6 @@ void refreshEnrollmentsIfDue(bool force) {
   lastEnrollmentRefresh = millis();
   Serial.print("Cached enrollments: ");
   Serial.println(static_cast<unsigned>(count));
-}
-
-EnrollmentInfo* findEnrollment(uint16_t slot) {
-  for (size_t i = 0; i < enrollmentCount; i++) {
-    if (enrollments[i].valid && enrollments[i].slot == slot) {
-      return &enrollments[i];
-    }
-  }
-  return nullptr;
 }
 
 bool slotIsFree(uint16_t slot, bool& freeSlot) {
@@ -399,7 +379,7 @@ bool scanFingerprintReader(R307S& reader, uint16_t& slot) {
 
 void recordLoginScan() {
   uint16_t slot = 0;
-  if (!scanFingerprintReader(loginReader, slot)) {
+  if (!scanFingerprintReader(entryReader, slot)) {
     return;
   }
   if (millis() - lastLoginScan < SCAN_DEBOUNCE_MS) {
@@ -409,72 +389,26 @@ void recordLoginScan() {
 
   if (!isDeviceAuthenticated()) {
     errorSignal();
-    Serial.println("Login denied: device not authenticated");
+    Serial.println("Entry denied: device not authenticated");
     return;
   }
 
-  EnrollmentInfo* enrollment = findEnrollment(slot);
-  if (enrollment == nullptr) {
-    // A local match that is not registered on the backend is not authorised.
-    errorSignal();
-    Serial.println("Login denied: template not enrolled on backend");
-    return;
-  }
-
-  String memberIdentifier = enrollment->loginId.length() > 0 ? enrollment->loginId : enrollment->usn;
-  if (memberIdentifier.length() == 0) {
-    errorSignal();
-    Serial.println("Login denied: enrollment has no member identifier");
-    return;
-  }
-
-  String key = String("login_") + String(static_cast<unsigned long>(millis()));
-  if (submitBiometricEvent("fingerprint_scan", memberIdentifier, key, "{}")) {
-    unlockDoor();
+  bool duplicate = false;
+  String reason;
+  if (authorizeDoorAccess(slot, "login", duplicate, reason)) {
+    if (!duplicate) {
+      unlockDoor();
+    }
     successSignal();
-    Serial.println("LOGIN AUTHORISED");
+    Serial.print("ENTRY AUTHORISED");
+    if (duplicate) {
+      Serial.print(" (duplicate scan ignored)");
+    }
+    Serial.println();
   } else {
     errorSignal();
-    Serial.println("Login denied by backend");
-  }
-}
-
-void recordLogoutScan() {
-  uint16_t slot = 0;
-  if (!scanFingerprintReader(logoutReader, slot)) {
-    return;
-  }
-  if (millis() - lastLogoutScan < SCAN_DEBOUNCE_MS) {
-    return;
-  }
-  lastLogoutScan = millis();
-
-  if (!isDeviceAuthenticated()) {
-    errorSignal();
-    Serial.println("Logout denied: device not authenticated");
-    return;
-  }
-
-  EnrollmentInfo* enrollment = findEnrollment(slot);
-  if (enrollment == nullptr) {
-    errorSignal();
-    Serial.println("Logout denied: template not enrolled on backend");
-    return;
-  }
-
-  String memberIdentifier = enrollment->loginId.length() > 0 ? enrollment->loginId : enrollment->usn;
-  if (memberIdentifier.length() == 0) {
-    errorSignal();
-    return;
-  }
-
-  String key = String("logout_") + String(static_cast<unsigned long>(millis()));
-  if (submitBiometricEvent("fingerprint_scan", memberIdentifier, key, "{}")) {
-    successSignal();
-    Serial.println("LOGOUT RECORDED");
-  } else {
-    errorSignal();
-    Serial.println("Logout denied by backend");
+    Serial.print("Entry denied by backend: ");
+    Serial.println(reason.length() > 0 ? reason : String("not authorised"));
   }
 }
 
@@ -1052,19 +986,14 @@ void setup() {
   digitalWrite(RED_LED, LOW);
   digitalWrite(BUZZER_PIN, LOW);
 
-  bool loginReady = loginReader.begin();
-  bool logoutReady = logoutReader.begin();
-  Serial.print("Login reader: ");
-  Serial.println(loginReady ? "ready" : "not detected");
-  Serial.print("Logout reader: ");
-  Serial.println(logoutReady ? "ready" : "not detected");
+  bool entryReady = entryReader.begin();
+  Serial.print("Entry reader: ");
+  Serial.println(entryReady ? "ready" : "not detected");
 
-#if ENROLLMENT_READER == ENROLLMENT_READER_LOGIN
-  enrollmentReaderReady = loginReady;
-#elif ENROLLMENT_READER == ENROLLMENT_READER_LOGOUT
-  enrollmentReaderReady = logoutReady;
-#else
+#if ENROLLMENT_READER == ENROLLMENT_READER_NONE
   enrollmentReaderReady = false;
+#else
+  enrollmentReaderReady = entryReady;
 #endif
   loadPersistedEnrollment();
   Serial.print("Enrollment reader: ");
@@ -1077,8 +1006,8 @@ void setup() {
 void loop() {
   updateAlarm();
 
-  // Emergency exit is checked first and never depends on Wi-Fi or the backend.
-  checkEmergencyExit();
+  // Push-button exit is checked first and never depends on Wi-Fi or the backend.
+  checkExitButton();
 
   updateDoor();
   wifiMaintain();
@@ -1112,7 +1041,6 @@ void loop() {
     processEnrollmentCommand();
     if (mode == MODE_IDLE) {
       recordLoginScan();
-      recordLogoutScan();
     }
   }
 

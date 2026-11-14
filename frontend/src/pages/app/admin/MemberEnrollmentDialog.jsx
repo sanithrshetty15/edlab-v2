@@ -185,7 +185,7 @@ export default function MemberEnrollmentDialog({
   const isTerminal = Boolean(session && TERMINAL_STATUSES.has(session.status));
   const canClose = !isActive || success;
   const copy = statusCopy(session);
-  const readers = readersInfo?.readers || [];
+  const readers = (readersInfo?.readers || []).filter((reader) => reader.key === "login");
   const availableReaders = readers.filter((reader) => reader.available);
   const selectedReader = readers.find((reader) => reader.key === selectedReaderKey);
   const canStart = Boolean(selectedReaderKey && readersInfo?.device?.id && selectedReader?.available);
@@ -211,7 +211,7 @@ export default function MemberEnrollmentDialog({
 
   const applyReadersResult = useCallback((result) => {
     setReadersInfo(result);
-    const readerList = result?.readers || [];
+    const readerList = (result?.readers || []).filter((reader) => reader.key === "login");
     setSelectedReaderKey((current) => {
       if (current && readerList.some((reader) => reader.key === current)) {
         return current;
@@ -448,8 +448,8 @@ export default function MemberEnrollmentDialog({
                 <div>
                   <h3>Fingerprint enrollment complete</h3>
                   <p>
-                    {member?.name || "The member"} has been activated. The login and logout
-                    readers can now recognize this member.
+                    {member?.name || "The member"} has been activated. The entry reader can now
+                    recognize this member.
                   </p>
                 </div>
               </div>
@@ -550,8 +550,7 @@ export default function MemberEnrollmentDialog({
 
               {!isActive && availableReaders.length === 0 && !readersBusy && (
                 <Alert tone="warning" title="No enrollment reader is connected">
-                  Connect the login, logout, or dedicated reader and refresh the list before
-                  starting enrollment.
+                  Connect the entry reader and refresh the list before starting enrollment.
                 </Alert>
               )}
 

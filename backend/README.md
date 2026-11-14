@@ -213,12 +213,12 @@ Security notes:
 ### Member fingerprint enrollment
 
 Creating a member through `POST /api/v1/members-management` now requires a
-name, academic year, email, and either a roll number (first year) or USN
-(second year and above). It creates an inactive `pending_enrollment` member and
-a `pending_details` session; it does not activate the member. The login ID is
-derived from the roll number or USN, and a temporary password is generated when
-one is not supplied. An administrator then selects an available reader and
-starts fingerprint enrollment:
+name, academic year, Gmail address, and either a roll number (first year) or
+USN (second year and above). It creates an inactive `pending_enrollment` member
+and a `pending_details` session; it does not activate the member. The login ID
+is derived from the roll number or USN, and a temporary password is generated
+when one is not supplied. An administrator then starts fingerprint enrollment
+on the single entry reader:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
@@ -239,6 +239,19 @@ Device session routes use `X-Device-Token` and are polled by the ESP32:
 | `/api/v1/biometric/enrollment-sessions/:uid/complete` | POST | Finalize slot and activate member |
 | `/api/v1/biometric/enrollment-sessions/:uid/fail` | POST | Report failure |
 | `/api/v1/biometric/enrollment-sessions/:uid/cleanup` | POST | Acknowledge local cleanup |
+
+Door access is synchronous and uses the same device token:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/biometric/door-access` | POST | Authorize a fingerprint slot for the entry reader |
+
+The request contains `fingerprint_slot` and `reader_key` (`login`). The response
+contains `authorized`, `duplicate`, `reason`, and member summary fields. A local
+fingerprint match alone never unlocks the door; the firmware unlocks only when
+`authorized` is true and `duplicate` is false. Authorized requests create a
+`fingerprint_scan` device event so the existing attendance processing remains
+unchanged.
 
 Session statuses are `pending_details`, `awaiting_sensor`,
 `waiting_first_scan`, `first_scan_captured`, `waiting_for_removal`,
@@ -271,7 +284,7 @@ members screen.
 - `POST /api/v1/auth/...` — member/admin login, logout, session refresh, password reset
 - `/api/v1/members`, `/api/v1/members-management`, `/api/v1/admins` — member and admin management
 - `/api/v1/attendance` — attendance list, today, summary, analytics, manual entry, logout
-- `/api/v1/biometric` — device authentication, two-scan fingerprint enrollment sessions, status, event submission/sync
+- `/api/v1/biometric` — device authentication, two-scan fingerprint enrollment sessions, synchronous door authorization, status, event submission/sync
 - `/api/v1/devices` — admin device provisioning, listing, key rotation, revocation
 - `/api/v1/borrowing`, `/api/v1/returns`, `/api/v1/inventory` — inventory workflow
 - `/api/v1/messages`, `/api/v1/announcements`, `/api/v1/notifications` — communication

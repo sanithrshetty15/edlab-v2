@@ -17,7 +17,7 @@ import (
 const (
 	resendEndpoint                  = "https://api.resend.com/emails"
 	labEmail                        = "edwin.lab.aiet@gmail.com"
-	RegistrationConfirmationSubject = "Welcome to Edwins Lab – Registration Successful!"
+	RegistrationConfirmationSubject = "EdwinsLab – Membership Registration Successful"
 )
 
 type RegistrationConfirmationData struct {
@@ -255,7 +255,7 @@ func (m *Mailer) RegistrationConfirmationEmail(data RegistrationConfirmationData
 <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e7e9e2;border-radius:14px;overflow:hidden;">
 <tr><td style="background:#1c1c1c;padding:26px 32px;">
 <p style="margin:0;color:#93c47d;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Edwins Lab</p>
-<h1 style="margin:8px 0 0;color:#ffffff;font-size:24px;line-height:1.3;">Registration successful</h1>
+<h1 style="margin:8px 0 0;color:#ffffff;font-size:24px;line-height:1.3;">Membership registration successful</h1>
 </td></tr>
 <tr><td style="padding:32px;">
 <p style="margin:0;font-size:16px;line-height:1.65;">Hello %s,</p>

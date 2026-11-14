@@ -42,6 +42,13 @@ bool submitBiometricEvent(const String& eventType,
                           const String& idempotencyKey,
                           const String& payloadJson = "{}");
 
+// POST /api/v1/biometric/door-access. The backend synchronously verifies that
+// the fingerprint slot belongs to an active member on this device and returns
+// an explicit authorization decision. The caller must only unlock the door when
+// this returns true.
+bool authorizeDoorAccess(uint16_t slot, const String& readerKey,
+                         bool& duplicate, String& reason);
+
 // POST /api/v1/biometric/enroll-fingerprint. Registers a device template slot
 // against a member. The raw template is never persisted by the backend.
 bool submitFingerprintEnrollment(int64_t memberId,

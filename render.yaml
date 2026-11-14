@@ -20,6 +20,8 @@ services:
         value: Asia/Kolkata
       - key: DATABASE_URL
         sync: false
+        # Set this to the new deployment database. Do not point the upgraded
+        # backend at the old database during cutover.
       - key: JWT_SECRET
         generateValue: true
       - key: SESSION_SECRET

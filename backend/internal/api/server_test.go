@@ -44,3 +44,13 @@ func TestAdminRoutesRegistered(t *testing.T) {
 
 	t.Log("Admin routes (admin-login and admin-verify-otp) are registered correctly")
 }
+
+func TestDoorAccessRouteRegistered(t *testing.T) {
+	server := &Server{}
+	for _, route := range server.Router().Routes() {
+		if route.Method == "POST" && route.Path == "/api/v1/biometric/door-access" {
+			return
+		}
+	}
+	t.Fatal("expected /api/v1/biometric/door-access POST route to be registered")
+}

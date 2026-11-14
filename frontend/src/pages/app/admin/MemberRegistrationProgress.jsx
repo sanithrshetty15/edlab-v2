@@ -1,9 +1,8 @@
 import { CheckIcon } from "../../../components/app/AppIcons";
 
 const REGISTRATION_STEPS = [
-  { id: "details", label: "Basic details" },
-  { id: "fingerprint", label: "Fingerprint enrollment" },
-  { id: "complete", label: "Registration complete" },
+  { id: "details", label: "Member Information" },
+  { id: "fingerprint", label: "Fingerprint Enrollment" },
 ];
 
 export default function MemberRegistrationProgress({ current = 1 }) {

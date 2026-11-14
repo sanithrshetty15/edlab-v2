@@ -322,6 +322,46 @@ bool parseEnrollmentResponse(const String& response, int httpCode,
 
 } // namespace
 
+bool authorizeDoorAccess(uint16_t slot, const String& readerKey,
+                         bool& duplicate, String& reason) {
+  duplicate = false;
+  reason = "";
+  if (slot < 1 || slot > 127) {
+    reason = "invalid_slot";
+    return false;
+  }
+
+  JsonDocument request;
+  request["fingerprint_slot"] = slot;
+  request["reader_key"] = readerKey.length() > 0 ? readerKey : String("login");
+  String body;
+  serializeJson(request, body);
+
+  String response;
+  int httpCode = 0;
+  if (!performDeviceRequest("POST", "/api/v1/biometric/door-access", body, response, httpCode)) {
+    reason = "backend_unreachable";
+    return false;
+  }
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.print("door-access HTTP ");
+    Serial.print(httpCode);
+    Serial.print(": ");
+    Serial.println(response);
+    reason = String("http_") + String(httpCode);
+    return false;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, response)) {
+    reason = "invalid_response";
+    return false;
+  }
+  duplicate = doc["duplicate"].as<bool>();
+  reason = doc["reason"].as<String>();
+  return doc["success"].as<bool>() && doc["authorized"].as<bool>();
+}
+
 bool fetchEnrollmentCommand(EnrollmentSessionInfo& out, String& action, int& httpCode) {
   out = EnrollmentSessionInfo();
   action = "";

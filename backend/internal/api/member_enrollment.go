@@ -307,6 +307,10 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "Unknown enrollment reader")
 		return
 	}
+	if readerKey != enrollmentReaderLogin {
+		fail(c, http.StatusUnprocessableEntity, "The entry reader is the only enrollment reader")
+		return
+	}
 
 	ctx := c.Request.Context()
 	var member models.Member
