@@ -174,9 +174,12 @@ export function AuthProvider({ children }) {
   const verifyAndCompleteAdminLogin = useCallback(
     async (otpCode) => {
       const code = String(otpCode ?? "").trim();
-      if (!code) throw new Error("Enter the verification code.");
+      if (!/^\d{4}$/.test(code)) throw new Error("Enter the 4-digit verification code.");
 
-      const data = await authApi.verifyAdminOTP({ otpCode: code });
+      const data = await authApi.verifyAdminOTP({
+        otpCode: code,
+        email: state.pendingAdminOtp?.email || "",
+      });
       const fallbackUser = data?.admin
         ? {
             id: data.admin.id,

@@ -55,7 +55,7 @@ func LoadConfig() (Config, error) {
 		CORSAllowedOrigins: parseList(getEnv("CORS_ALLOWED_ORIGINS", getEnv("CORS_ORIGINS", ""))),
 		SessionTTLMember:   durationEnv("SESSION_TTL_SECONDS", 24*time.Hour),
 		SessionTTLAdmin:    durationEnv("ADMIN_SESSION_TTL_SECONDS", durationEnv("SESSION_TTL_SECONDS", 24*time.Hour)),
-		OTPExpiry:          durationEnv("OTP_EXPIRY_SECONDS", 10*time.Minute),
+		OTPExpiry:          otpExpiryEnv(),
 		OTPMaxAttempts:     intEnv("OTP_MAX_ATTEMPTS", 5),
 		OTPRequestWindow:   durationEnv("OTP_REQUEST_WINDOW_SECONDS", 15*time.Minute),
 		OTPMaxRequests:     intEnv("OTP_MAX_REQUESTS", 5),
@@ -175,6 +175,17 @@ func boolEnv(key string, defaultValue bool) bool {
 		return defaultValue
 	}
 	return parsed
+}
+
+func otpExpiryEnv() time.Duration {
+	const fallback = 5 * time.Minute
+	if value := durationEnv("OTP_EXPIRY_SECONDS", 0); value > 0 {
+		return value
+	}
+	if minutes := intEnv("OTP_EXPIRY_MINUTES", 0); minutes > 0 {
+		return time.Duration(minutes) * time.Minute
+	}
+	return fallback
 }
 
 func durationEnv(key string, defaultValue time.Duration) time.Duration {

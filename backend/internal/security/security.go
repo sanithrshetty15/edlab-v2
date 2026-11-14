@@ -142,10 +142,11 @@ func (m *Manager) TokenDigest(token string) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// GenerateOTP generates a cryptographically secure numeric one-time password.
+// GenerateOTP generates a cryptographically secure four-digit numeric one-time
+// password. Leading zeroes are preserved.
 func (m *Manager) GenerateOTP() (string, error) {
-	const digits = 6
-	maximum := uint64(1000000)
+	const digits = 4
+	maximum := uint64(10000)
 	value, err := randUint64(maximum)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate OTP: %w", err)
@@ -179,9 +180,23 @@ func (m *Manager) DigestOTP(code string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+// IsOTPFormat reports whether code is exactly four numeric digits.
+func IsOTPFormat(code string) bool {
+	code = strings.TrimSpace(code)
+	if len(code) != 4 {
+		return false
+	}
+	for _, character := range code {
+		if character < '0' || character > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // ValidateOTP compares a submitted OTP against a stored digest in constant time.
 func (m *Manager) ValidateOTP(code, digest string) bool {
-	if len(strings.TrimSpace(code)) < 4 {
+	if !IsOTPFormat(code) {
 		return false
 	}
 	actual := m.DigestOTP(code)

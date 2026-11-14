@@ -238,14 +238,14 @@ func (s *Server) registrationConfirmationEmailJob(ctx context.Context, payload j
 		identifierLabel = "USN"
 		identifier = strings.TrimSpace(*member.USN)
 	}
-	body := s.Mailer.RegistrationConfirmationEmail(mailer.RegistrationConfirmationData{
+	content := s.Mailer.RegistrationConfirmationEmail(mailer.RegistrationConfirmationData{
 		Name:            member.Name,
 		LoginID:         member.LoginID,
 		IdentifierLabel: identifierLabel,
 		Identifier:      identifier,
 		AcademicYear:    member.AcademicYear,
 	})
-	if err := s.Mailer.SendEmail(item.Recipient, mailer.RegistrationConfirmationSubject, body); err != nil {
+	if err := s.Mailer.SendEmailContent(item.Recipient, mailer.RegistrationConfirmationSubject, content); err != nil {
 		s.markRegistrationEmailFailed(ctx, item, err.Error())
 		return fmt.Errorf("send registration confirmation email: %w", err)
 	}

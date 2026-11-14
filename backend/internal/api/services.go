@@ -8,6 +8,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/sanithrshetty15/edwinslab/backend/internal/mailer"
 	"github.com/sanithrshetty15/edwinslab/backend/internal/models"
 )
 
@@ -16,6 +17,7 @@ type emailJobPayload struct {
 	Subject string `json:"subject"`
 	Body    string `json:"body"`
 	HTML    string `json:"html"`
+	Text    string `json:"text"`
 }
 
 func (s *Server) registerJobHandlers() {
@@ -30,11 +32,14 @@ func (s *Server) registerJobHandlers() {
 		if s.Mailer == nil {
 			return fmt.Errorf("mailer unavailable")
 		}
-		body := item.Body
-		if body == "" {
-			body = item.HTML
+		content := mailer.EmailContent{
+			HTML: item.HTML,
+			Text: item.Text,
 		}
-		return s.Mailer.SendEmail(item.To, item.Subject, body)
+		if content.HTML == "" && content.Text == "" {
+			content.HTML = item.Body
+		}
+		return s.Mailer.SendEmailContent(item.To, item.Subject, content)
 	}
 	s.Jobs.Register("email_delivery", handler)
 	s.Jobs.Register("mail.send", handler)
@@ -48,13 +53,18 @@ func (s *Server) EmailConfigured() bool {
 }
 
 func (s *Server) enqueueEmail(ctx context.Context, to, subject, body string) error {
+	return s.enqueueEmailContent(ctx, to, subject, mailer.EmailContent{HTML: body})
+}
+
+func (s *Server) enqueueEmailContent(ctx context.Context, to, subject string, content mailer.EmailContent) error {
 	if s.Jobs == nil {
 		return fmt.Errorf("job manager unavailable")
 	}
 	payload, _ := json.Marshal(emailJobPayload{
 		To:      to,
 		Subject: subject,
-		Body:    body,
+		HTML:    content.HTML,
+		Text:    content.Text,
 	})
 	return s.Jobs.Enqueue(ctx, "email_delivery", payload, time.Now().UTC())
 }

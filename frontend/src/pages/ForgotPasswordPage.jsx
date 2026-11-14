@@ -50,7 +50,7 @@ export default function ForgotPasswordPage() {
     if (submitting) return;
 
     const nextErrors = {};
-    if (!otp.trim()) nextErrors.otp = "Enter the verification code from your email.";
+    if (!/^\d{4}$/.test(otp.trim())) nextErrors.otp = "Enter the 4-digit code from your email.";
     if (password.length < 8) nextErrors.password = "Use at least 8 characters.";
     if (passwordConfirmation !== password) {
       nextErrors.passwordConfirmation = "Passwords do not match.";
@@ -163,7 +163,7 @@ export default function ForgotPasswordPage() {
                 label="Verification code"
                 htmlFor="reset-otp"
                 error={errors.otp}
-                hint="The six-digit code from your email."
+                hint="The four-digit code from your email."
                 required
               >
                 <TextInput
@@ -171,12 +171,14 @@ export default function ForgotPasswordPage() {
                   className={errors.otp ? "lab-input--invalid" : ""}
                   value={otp}
                   onChange={(event) => {
-                    setOtp(event.target.value);
+                    setOtp(event.target.value.replace(/\D/g, "").slice(0, 4));
                     setErrors((current) => ({ ...current, otp: undefined }));
                   }}
                   inputMode="numeric"
+                  pattern="[0-9]{4}"
+                  maxLength={4}
                   autoComplete="one-time-code"
-                  placeholder="000000"
+                  placeholder="0000"
                   disabled={submitting}
                 />
               </Field>

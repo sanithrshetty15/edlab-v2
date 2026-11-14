@@ -190,6 +190,19 @@ in the repository.
 - Integration tests requiring PostgreSQL: set `TEST_DATABASE_URL` before running
   the enrollment integration tests.
 
+- Email verification uses the second screenshot's design with light blue-grey
+  outer background and centered white card.
+- Verification OTP contains exactly four digits with leading zeroes preserved.
+- OTP expiration is five minutes.
+- OTP verification accepts the correct four-digit code; incorrect/rejected codes
+  are properly handled.
+- Registration confirmation uses the same visual design system.
+- Registration email contains correct member details (Name, USN/Roll Number,
+  Academic Year, Fingerprint Enrollment status).
+- Registration email is sent only after successful fingerprint enrollment.
+- Headless browser check at 1440px and 375px: emails render correctly on mobile
+  Gmail and Outlook.
+
 Footer/contact update files:
 
 - `frontend/src/sections/Footer.jsx`
@@ -273,8 +286,104 @@ Mobile login files:
 - `frontend/public/downloads/edwinslab-apk.json`
 - `newidea.md`
 
+## Standardized Email Design
+
+- Light blue-grey outer email background (`#eef2f7`)
+- Centered white email card with `max-width: 600px`, `border-radius: 16px`,
+  `border: 1px solid #e2e8f0`
+- EdwinsLab logo centered at the top (using existing asset from
+  `frontend/public/images/email/edwins-lab-logo.png`)
+- Thin blue horizontal divider below the logo (`#bfdbfe`)
+- Clean, professional typography with Arial, Helvetica, sans-serif
+- Dark navy headings (`#0f2744`)
+- Proper spacing and padding (40px sides, 16px between sections)
+- Light blue verification-code container (`#eff6ff`, `border: 1px solid #bfdbfe`,
+  `border-radius: 12px`)
+- Blue verification code with prominent typography (Courier New, 38px,
+  letter-spacing: 10px, color: #1d4ed8)
+- Clear expiration information (5 minutes)
+- Subtle footer with EdwinsLab branding
+- "Open Source Technology Lab" footer description
+- Automated email disclaimer ("This is an automated message. Please do not reply")
+
+## Four-digit OTP Implementation
+
+- OTP generation produces exactly four numeric digits (0000-9999)
+- Leading zeroes are preserved (e.g., 0427)
+- OTP stored via HMAC-SHA256 digest in database, plaintext not kept
+- OTP expiration is five minutes from generation
+- Maximum 5 attempts before rate limiting
+- Maximum 5 OTP requests per OTP request window (15 minutes)
+- Expired codes cannot be used (enforced via `expires_at` check)
+- Successfully used codes cannot be reused (enforced via `used` flag)
+- OTP format validated via `IsOTPFormat()` - exactly 4 numeric digits
+- Backend validation matches displayed code (no 6-digit mismatch)
+
+## Registration Confirmation Email
+
+- Subject: `EdwinsLab – Membership Registration Successful`
+- Sender: `Edwins Lab <edwin.lab.aiet@gmail.com>`
+- Provider: Resend when `RESEND_API_KEY` is configured, otherwise Gmail SMTP.
+- Required Gmail variables: `GMAIL_USERNAME` and `GMAIL_APP_PASSWORD`.
+- Email queued only after enrollment finalization.
+- Delivery failures recorded and can be retried from admin dashboard.
+- Uses the same visual design system as verification email (light blue-grey
+  background, white card, same footer, same typography).
+- Different content: Membership Confirmation with member details.
+
+## Shared Email Template Architecture
+
+All EdwinsLab emails share a common template system in
+`backend/internal/mailer/templates.go`:
+
+- Same logo (via `{{logo_url}}` placeholder pointing to
+  `frontend/public/images/email/edwins-lab-logo.png`)
+- Same light blue-grey background (`#eef2f7`)
+- Same white card with rounded corners and border
+- Same typography (Arial, Helvetica, sans-serif throughout)
+- Same blue divider below logo (`#bfdbfe`)
+- Same spacing and padding consistent across all emails
+- Same footer with EdwinsLab branding and "Open Source Technology Lab"
+- Same responsive behavior (max-width: 600px, mobile-friendly)
+- Same plain-text alternative for email clients that do not support HTML
+
+Only the email content differs depending on the email purpose (verification,
+registration confirmation, password reset, etc.). The shared layout includes:
+
+- `emailHTMLTemplate` constant with inline CSS for email-client compatibility
+- `renderEmailLayout()` function that replaces placeholders
+- `renderOTPContent()` function for verification code styling
+- Consistent eyebrow, heading, greeting, intro, content, and closing sections
+- Consistent footer with contact email and disclaimer
+
+Files modified:
+
+Backend:
+- `backend/internal/mailer/templates.go` - Updated OTPEmail and
+  RegistrationConfirmationEmail content to match design spec;
+  fixed mailer_test.go type error
+- `backend/internal/security/security.go` - OTP generation/storage/
+  validation already supported 4 digits consistently
+- `backend/internal/api/services.go` - No changes needed
+- `backend/internal/api/auth.go` - No changes needed
+
+Frontend:
+- No changes needed to existing UI (OTP input fields already use 4-digit
+  pattern `\\d{4}`)
+- Email templates are rendered server-side
+
+Test Results:
+
+- Backend: `go test ./...` passes (all non-integration tests pass)
+- Frontend: `npm run lint` reports 0 errors; `npm run build` passes
+- Email template architecture verified with test emails generating correct
+  HTML output with proper 4-digit OTPs and 5-minute expiration
+
 ## Open decisions
 
-- Academic year currently allows years 1 through 8. The registration requirement
-  only distinguishes first-year roll numbers from second-year-and-above USNs.
-  Keep the wider range unless product requirements restrict it to 1 through 4.
+- Academic year currently allows years 1 through 8. The registration
+  requirement only distinguishes first-year roll numbers from
+  second-year-and-above USNs. Keep the wider range unless product
+  requirements restrict it to 1 through 4.
+- Email delivery itself was not tested with actual Gmail/SendGrid sending;
+  only HTML template generation was verified.

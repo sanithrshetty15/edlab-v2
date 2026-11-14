@@ -7,7 +7,7 @@ import (
 
 func TestRegistrationConfirmationEmail(t *testing.T) {
 	mail := &Mailer{FrontendURL: "https://edwinslab.in/"}
-	body := mail.RegistrationConfirmationEmail(RegistrationConfirmationData{
+	content := mail.RegistrationConfirmationEmail(RegistrationConfirmationData{
 		Name:            `<script>alert("x")</script>`,
 		LoginID:         "4AL25CS001",
 		IdentifierLabel: "USN",
@@ -15,16 +15,16 @@ func TestRegistrationConfirmationEmail(t *testing.T) {
 		AcademicYear:    2,
 	})
 
-	if !strings.Contains(body, "Membership registration successful") {
+	if !strings.Contains(content.HTML, "Welcome to Edwins Lab!") {
 		t.Fatal("registration email is missing its heading")
 	}
-	if !strings.Contains(body, "https://edwinslab.in/login") {
+	if !strings.Contains(content.HTML, "https://edwinslab.in/login") {
 		t.Fatal("registration email is missing the sign-in link")
 	}
-	if !strings.Contains(body, "4AL25CS001") {
+	if !strings.Contains(content.HTML, "4AL25CS001") {
 		t.Fatal("registration email is missing the login ID")
 	}
-	if strings.Contains(body, "<script>") {
+	if strings.Contains(content.HTML, "<script>") {
 		t.Fatal("registration email did not escape the member name")
 	}
 	if RegistrationConfirmationSubject != "EdwinsLab – Membership Registration Successful" {

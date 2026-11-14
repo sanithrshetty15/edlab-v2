@@ -137,6 +137,10 @@ export default function LoginPage({ sessionError, expired = false }) {
   const handleOtpSubmit = async (event) => {
     event.preventDefault();
     if (submitting) return;
+    if (!/^\d{4}$/.test(otp.trim())) {
+      setErrors({ otp: "Enter the 4-digit code from your email." });
+      return;
+    }
 
     setSubmitting(true);
     try {
@@ -168,7 +172,7 @@ export default function LoginPage({ sessionError, expired = false }) {
           <div className="login-brand__copy" style={{ maxWidth: "80%", margin: "0 auto" }}>
             <h2>Admin Verification</h2>
             <p>A verification code has been sent to your administrator email address.</p>
-            <p>Please enter the 6-digit code you received.</p>
+            <p>Please enter the 4-digit code you received.</p>
           </div>
 
           <div className="login-brand__footer" style={{ marginTop: "20px" }}>
@@ -186,7 +190,7 @@ export default function LoginPage({ sessionError, expired = false }) {
             <header className="login-head">
               <p className="login-head__eyebrow">Enter verification code</p>
               <h2>Admin OTP Verification</h2>
-              <p>Enter the 6-digit code sent to your administrator email</p>
+              <p>Enter the 4-digit code sent to your administrator email</p>
             </header>
 
             <form className="login-form" onSubmit={handleOtpSubmit} noValidate>
@@ -201,9 +205,14 @@ export default function LoginPage({ sessionError, expired = false }) {
                     type="text"
                     className={`lab-input--with-icon ${errors.otp ? "lab-input--invalid" : ""}`}
                     value={otp}
-                    onChange={(event) => setOtp(event.target.value)}
-                    placeholder="123456"
-                    maxLength={6}
+                    onChange={(event) => {
+                      setOtp(event.target.value.replace(/\D/g, "").slice(0, 4));
+                      setErrors((current) => ({ ...current, otp: undefined }));
+                    }}
+                    placeholder="0000"
+                    maxLength={4}
+                    inputMode="numeric"
+                    pattern="[0-9]{4}"
                     autoComplete="one-time-code"
                     spellCheck="false"
                     aria-invalid={errors.otp ? "true" : undefined}
