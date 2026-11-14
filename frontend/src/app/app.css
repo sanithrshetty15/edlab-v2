@@ -5103,3 +5103,177 @@ a.lab-activity__title:hover {
   border-top: 1px solid var(--lab-line);
   padding-top: 0.9rem;
 }
+
+/* --------------------------------------------------------------------------
+   Member fingerprint enrollment
+   -------------------------------------------------------------------------- */
+
+.lab-enrollment-status {
+  display: flex;
+  gap: 0.85rem;
+  border: 1px solid var(--lab-line);
+  border-radius: var(--lab-radius);
+  background: rgba(255, 255, 255, 0.018);
+  padding: 0.95rem;
+}
+
+.lab-enrollment-status__icon {
+  display: grid;
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--lab-accent-soft);
+  color: var(--lab-accent);
+}
+
+.lab-enrollment-status__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lab-enrollment-status__title h3 {
+  margin: 0;
+  color: var(--lab-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.lab-enrollment-status p {
+  margin: 0.35rem 0 0;
+  color: var(--lab-muted);
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
+.lab-enrollment-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lab-enrollment-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  border: 1px solid var(--lab-line);
+  border-radius: var(--lab-radius-sm);
+  padding: 0.65rem 0.75rem;
+  opacity: 0.62;
+  transition: opacity 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.lab-enrollment-step--done,
+.lab-enrollment-step--current {
+  opacity: 1;
+}
+
+.lab-enrollment-step--current {
+  border-color: rgba(147, 196, 125, 0.42);
+  background: var(--lab-accent-soft);
+}
+
+.lab-enrollment-step--done {
+  border-color: rgba(147, 196, 125, 0.2);
+}
+
+.lab-enrollment-step__index {
+  display: grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--lab-line-strong);
+  border-radius: 999px;
+  color: var(--lab-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.lab-enrollment-step--current .lab-enrollment-step__index {
+  border-color: var(--lab-accent);
+  background: var(--lab-accent);
+  color: #10150e;
+}
+
+.lab-enrollment-step--done .lab-enrollment-step__index {
+  border-color: rgba(147, 196, 125, 0.35);
+  background: var(--lab-accent-soft);
+  color: var(--lab-accent);
+}
+
+.lab-enrollment-step strong {
+  display: block;
+  color: var(--lab-text-soft);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.lab-enrollment-step p {
+  margin: 0.2rem 0 0;
+  color: var(--lab-muted);
+  font-size: 0.65rem;
+  line-height: 1.5;
+}
+
+.lab-enrollment-success {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.9rem;
+  border: 1px solid rgba(147, 196, 125, 0.3);
+  border-radius: var(--lab-radius);
+  background: var(--lab-success-soft);
+  padding: 1rem;
+}
+
+.lab-enrollment-success__icon {
+  display: grid;
+  width: 2.6rem;
+  height: 2.6rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 999px;
+  background: rgba(147, 196, 125, 0.16);
+  color: var(--lab-success);
+}
+
+.lab-enrollment-success h3 {
+  margin: 0;
+  color: var(--lab-text);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.lab-enrollment-success p {
+  margin: 0.35rem 0 0;
+  color: var(--lab-muted);
+  font-size: 0.7rem;
+  line-height: 1.6;
+}
+
+.lab-enrollment-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  border-top: 1px solid var(--lab-line);
+  padding-top: 0.85rem;
+  color: var(--lab-faint);
+}
+
+.lab-enrollment-note p {
+  margin: 0;
+  font-size: 0.66rem;
+  line-height: 1.55;
+}
+
+.lab-enrollment-cleanup-note {
+  display: block;
+  margin-top: 0.4rem;
+  font-weight: 600;
+}

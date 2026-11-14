@@ -2,6 +2,8 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"math"
 	"net/http"
 	"strconv"
@@ -35,6 +37,18 @@ func failValidation(c *gin.Context, message string, errors []string) {
 func bindJSON(c *gin.Context, target any) bool {
 	decoder := json.NewDecoder(c.Request.Body)
 	if err := decoder.Decode(target); err != nil {
+		fail(c, http.StatusUnprocessableEntity, "Invalid request body")
+		return false
+	}
+	return true
+}
+
+func bindOptionalJSON(c *gin.Context, target any) bool {
+	if c.Request.Body == nil || c.Request.ContentLength == 0 {
+		return true
+	}
+	decoder := json.NewDecoder(c.Request.Body)
+	if err := decoder.Decode(target); err != nil && !errors.Is(err, io.EOF) {
 		fail(c, http.StatusUnprocessableEntity, "Invalid request body")
 		return false
 	}
@@ -219,6 +233,7 @@ func serializeManagedMemberSummary(member *models.Member) gin.H {
 		"phone_verified":       member.PhoneVerified,
 		"status":               member.Status,
 		"must_change_password": member.MustChangePassword,
+		"enrollment_status":    member.EnrollmentStatus,
 		"created_at":           member.CreatedAt,
 		"updated_at":           member.UpdatedAt,
 	}
@@ -258,4 +273,3 @@ func serializeUser(user *models.User) gin.H {
 	}
 	return data
 }
-

@@ -318,14 +318,16 @@ func (s *Server) listBiometricEnrollments(c *gin.Context) {
 			continue
 		}
 		items = append(items, gin.H{
-			"id":              enrollments[i].ID,
-			"member_id":       enrollments[i].MemberID,
-			"member_name":     member.Name,
-			"member_login_id": member.LoginID,
-			"member_usn":      member.USN,
-			"device_user_id":  enrollments[i].DeviceUserID,
-			"status":          enrollments[i].Status,
-			"enrolled_at":     enrollments[i].CreatedAt,
+			"id":               enrollments[i].ID,
+			"member_id":        enrollments[i].MemberID,
+			"member_name":      member.Name,
+			"member_login_id":  member.LoginID,
+			"member_usn":       member.USN,
+			"reader_key":       enrollments[i].ReaderKey,
+			"device_user_id":   enrollments[i].DeviceUserID,
+			"fingerprint_slot": enrollments[i].FingerprintSlot,
+			"status":           enrollments[i].Status,
+			"enrolled_at":      enrollments[i].CreatedAt,
 		})
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true, "enrollments": items})

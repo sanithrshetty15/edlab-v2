@@ -39,6 +39,13 @@ var requiredAdmins = []adminSpec{
 		PasswordEnv: "ADMIN_TWO_PASSWORD",
 		Primary:     false,
 	},
+	{
+		Name:        "Edwins LAB",
+		Email:       "edwins@aiet.org.in",
+		Phone:       "+919380455051",
+		PasswordEnv: "ADMIN_THREE_PASSWORD",
+		Primary:     false,
+	},
 }
 
 func EnsureRequiredAdmins(ctx context.Context, db *gorm.DB, log *slog.Logger, security *security.Manager, resetPasswords bool) error {

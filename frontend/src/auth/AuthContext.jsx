@@ -9,6 +9,7 @@ const initialState = {
   mustChangePassword: false,
   sessionError: null,
   expired: false,
+  pendingAdminOtp: null,
 };
 
 function applySession(user, mustChangePassword) {
@@ -24,6 +25,16 @@ function applySession(user, mustChangePassword) {
 function stateFromSession(session) {
   if (session.status === "authenticated") {
     return applySession(session.user, session.mustChangePassword);
+  }
+
+  if (session.status === "pending_admin_otp") {
+    return {
+      ...initialState,
+      status: "pending_admin_otp",
+      pendingAdminOtp: session.pendingAdminOtp,
+      sessionError: null,
+      expired: false,
+    };
   }
 
   return {
@@ -138,16 +149,29 @@ export function AuthProvider({ children }) {
 
   const loginAdmin = useCallback(
     async (credentials) => {
+      // Step 1: Request OTP to be sent to administrator email
       const data = await authApi.adminLogin(credentials);
-      const fallbackUser = data?.admin
-        ? {
-            id: data.admin.id,
-            email: data.admin.email,
-            role: "admin",
-            admin: data.admin,
-          }
-        : { role: "admin", email: credentials.email };
-      return completeLogin(data, fallbackUser);
+      if (data?.purpose !== "admin_login") {
+        throw new Error("Failed to initiate admin OTP login");
+      }
+
+      // The frontend should now prompt the user for the OTP code
+      // and call verifyAdminOTP on the backend to complete the login
+      // For now, we store the email and purpose to complete verification later
+      const { email } = credentials;
+      // Store the pending OTP verification state
+      setState((current) =>
+        current.status === "authenticated"
+          ? current
+          : {
+              ...initialState,
+              status: "unauthenticated",
+              pendingAdminOtp: { email, purpose: data.purpose },
+              sessionError: null,
+              expired: false,
+            },
+      );
+      return { pendingOtp: true, email };
     },
     [completeLogin],
   );

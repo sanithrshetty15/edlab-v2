@@ -10,6 +10,7 @@ func (s *Server) registerAuthRoutes(api *gin.RouterGroup) {
 	auth := api.Group("/auth")
 	auth.POST("/member-login", s.RateLimit("member-login", 20, 5*time.Minute), s.memberLogin)
 	auth.POST("/admin-login", s.RateLimit("admin-login", 20, 5*time.Minute), s.adminLogin)
+	auth.POST("/admin-verify-otp", s.RateLimit("admin-verify-otp", 20, 5*time.Minute), s.verifyAdminOTP)
 	auth.POST("/password-reset/request", s.RateLimit("password-reset-request", 10, 15*time.Minute), s.passwordResetRequestHandler)
 	auth.POST("/password-reset/complete", s.RateLimit("password-reset-complete", 20, 15*time.Minute), s.passwordResetComplete)
 	auth.DELETE("/logout", s.RequireAuth(), s.logout)
@@ -49,5 +50,9 @@ func (s *Server) registerMemberManagementRoutes(api *gin.RouterGroup) {
 	members.PATCH("/:id/status", s.updateMemberStatus)
 	members.PATCH("/:id/_fields", s.updateMemberFields)
 	members.PATCH("/:id/force-password-reset", s.forceMemberPasswordReset)
+	members.POST("/:id/fingerprint-enrollment", s.startMemberFingerprintEnrollment)
+	members.GET("/:id/fingerprint-enrollment", s.memberFingerprintEnrollmentStatus)
+	members.GET("/:id/fingerprint-enrollment/readers", s.memberEnrollmentReaders)
+	members.DELETE("/:id/fingerprint-enrollment", s.cancelMemberFingerprintEnrollment)
 	members.DELETE("/:id", s.deactivateMember)
 }

@@ -130,6 +130,7 @@ function statusTone(status) {
     case "completed":
       return "success";
     case "pending":
+    case "pending_enrollment":
     case "scheduled":
     case "submitted":
     case "in_progress":

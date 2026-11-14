@@ -66,6 +66,34 @@
 #define LOGOUT_TX 18
 #endif
 
+// ===== FINGERPRINT ENROLLMENT READER =====
+// Enrollment is disabled unless explicitly pointed at one of the two readers.
+// The default is deliberately fail-closed: an unconfigured controller never
+// claims enrollment commands and never falls back to a login/logout reader.
+#define ENROLLMENT_READER_NONE 0
+#define ENROLLMENT_READER_LOGIN 1
+#define ENROLLMENT_READER_LOGOUT 2
+#ifndef ENROLLMENT_READER
+#define ENROLLMENT_READER ENROLLMENT_READER_NONE
+#endif
+#if ENROLLMENT_READER != ENROLLMENT_READER_NONE && \
+    ENROLLMENT_READER != ENROLLMENT_READER_LOGIN && \
+    ENROLLMENT_READER != ENROLLMENT_READER_LOGOUT
+#error "ENROLLMENT_READER must be NONE, LOGIN or LOGOUT"
+#endif
+
+// How often the controller asks the backend for enrollment work and checks
+// whether an active session was cancelled or expired.
+#ifndef ENROLLMENT_POLL_INTERVAL
+#define ENROLLMENT_POLL_INTERVAL 2000UL
+#endif
+#ifndef ENROLLMENT_RECONCILE_INTERVAL
+#define ENROLLMENT_RECONCILE_INTERVAL 5000UL
+#endif
+#ifndef ENROLLMENT_SCAN_INTERVAL
+#define ENROLLMENT_SCAN_INTERVAL 300UL
+#endif
+
 // Electromagnetic lock relay.
 // Fail-safe wiring: the lock is energised while locked and releases when the
 // relay is de-energised, so an emergency exit works without Wi-Fi or power.

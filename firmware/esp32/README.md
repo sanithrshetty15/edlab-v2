@@ -17,10 +17,13 @@ firmware/esp32/
 ├── src/
 │   ├── main.cpp            # ONLY setup() and loop()
 │   ├── R307S.h/.cpp        # R307S UART driver (two independent readers)
+│   ├── enrollment_flow.h   # Pure two-scan enrollment state machine
 │   ├── wifi_manager.h/.cpp # Non-blocking Wi-Fi management
 │   ├── device_auth.h/.cpp  # Backend device auth + biometric events
 │   ├── config.h            # Single configuration source
 │   └── config.local.example.h
+├── test/
+│   └── test_enrollment_flow/test_main.cpp
 ├── legacy/                 # Archived sketches, not compiled
 │   ├── CompleteFirmware.ino.legacy
 │   └── firmware_main.cpp.legacy
@@ -37,6 +40,7 @@ cd firmware/esp32
 pio run            # build
 pio run -t upload  # flash
 pio device monitor # serial monitor at 115200
+pio test -e native # state-machine tests, no hardware required
 ```
 
 - Board: `esp32dev` (ESP32-WROOM-32UE)
@@ -74,6 +78,20 @@ and otherwise falls back to placeholder values.
 
 `DEVICE_HMAC_SECRET` is optional. Set it only when event HMAC signing is
 enabled; it must match the backend `BIOMETRIC_API_SECRET`.
+
+Enrollment is fail-closed by default. Set `ENROLLMENT_READER` to the reader the
+member will physically use for the two enrollment scans:
+
+```c
+// #define ENROLLMENT_READER ENROLLMENT_READER_LOGIN
+// #define ENROLLMENT_READER ENROLLMENT_READER_LOGOUT
+```
+
+With the default `ENROLLMENT_READER_NONE`, the controller never claims backend
+enrollment sessions and login/logout continue to work normally. The ALF V1.0
+board has no spare UART for a third reader, so enrollment must share the login
+or logout sensor. The selected reader must be detected at boot or enrollment
+stays disabled.
 
 ## Provisioning the device API key
 
@@ -154,6 +172,9 @@ secret and is not replaced by per-device key rotation.
 | `RED_LED` | 22 | Status LED |
 | `BUZZER_PIN` | 21 | Active-HIGH |
 
+There is no third UART on the ALF V1.0 board. Enrollment reuses either the
+login or logout reader and must be selected explicitly in `config.h`.
+
 Relay levels are configurable in `config.h`:
 
 ```c
@@ -165,6 +186,39 @@ Verify these against your relay module; an inverted module needs the levels
 swapped. `README` and the archived sketch previously disagreed, so measure the
 module before deploying.
 
+## Fingerprint enrollment workflow
+
+An administrator creates the member's details first, then starts a
+fingerprint enrollment session from member management. The device polls
+`GET /api/v1/biometric/enrollment-session` every two seconds and only claims a
+session when an enrollment reader is configured and ready.
+
+1. The backend returns an `enroll` action and a `session_uid`.
+2. The firmware reports `waiting_first_scan`, captures the first image, and
+   reports `first_scan_captured`.
+3. The finger must be removed; the firmware then reports
+   `waiting_for_removal` and `waiting_second_scan`.
+4. The second image is captured and reported as `second_scan_captured`.
+5. The driver compares both character buffers, merges them with `regModel`,
+   finds a free slot by probing the sensor, stores the template, and searches
+   every other slot for a duplicate.
+6. The slot is reported with `verifying` and the firmware calls
+   `POST /api/v1/biometric/enrollment-sessions/:uid/complete`.
+7. The member becomes active only after the backend finalizes the enrollment.
+
+The firmware never uploads or stores raw fingerprint images or templates. It
+keeps only the slot number and session UID in NVS while a stored template is
+waiting for backend confirmation. On reboot, that state is reconciled with the
+backend before any new session is claimed. Failed, cancelled, or expired
+sessions delete the locally stored template; a backend `slot_conflict` response
+is the one case where the local template is left untouched because the backend
+has told the device not to erase another member's slot.
+
+The firmware handles duplicate fingers, two scans that do not match, sensor
+errors, no free slot, NVS failures, backend conflicts, cancellation, expiry,
+and network loss during completion. In the last case it retries completion and
+keeps the NVS recovery record until the session is resolved.
+
 ## Backend contract
 
 All routes are under `https://<host>/api/v1`. Device routes authenticate with
@@ -173,11 +227,20 @@ All routes are under `https://<host>/api/v1`. Device routes authenticate with
 | Endpoint | Method | Purpose | Auth |
 |---|---|---|---|
 | `/api/v1/biometric/authenticate-device` | POST | Exchange `{api_key, device_name}` for a token | none |
-| `/api/v1/biometric/enroll-fingerprint` | POST | Register a device template slot for a member | `X-Device-Token` |
+| `/api/v1/biometric/enrollment-session` | GET | Claim cleanup or active enrollment work | `X-Device-Token` |
+| `/api/v1/biometric/enrollment-sessions/:uid` | GET | Check status, cancellation, or expiry | `X-Device-Token` |
+| `/api/v1/biometric/enrollment-sessions/:uid/progress` | POST | Report two-scan progress | `X-Device-Token` |
+| `/api/v1/biometric/enrollment-sessions/:uid/complete` | POST | Finalize the slot and activate the member | `X-Device-Token` |
+| `/api/v1/biometric/enrollment-sessions/:uid/fail` | POST | Report a sensor or match failure | `X-Device-Token` |
+| `/api/v1/biometric/enrollment-sessions/:uid/cleanup` | POST | Acknowledge local slot cleanup | `X-Device-Token` |
 | `/api/v1/biometric/enrollments` | GET | Cache slot-to-member mappings | `X-Device-Token` |
 | `/api/v1/biometric/submit-event` | POST | Submit `fingerprint_scan` events | `X-Device-Token` or HMAC signature |
 | `/api/v1/biometric/status` | GET | Device status / pending event count | `X-Device-Token` |
 | `/api/v1/biometric/sync-events` | POST | Fetch events for the device | `X-Device-Token` |
+
+The legacy `POST /api/v1/biometric/enroll-fingerprint` route remains in the
+backend for compatibility, but the current firmware uses the session workflow
+above.
 
 There is no `/api/v1/device/authenticate`, `/api/v1/device/heartbeat`,
 `/api/v1/biometric/event`, `/api/v1/biometric/enroll` or
@@ -220,8 +283,10 @@ Allowed event types on `/submit-event`: `fingerprint_scan`,
 
 ## Verification status
 
-- `pio run`: **passes** (ESP32 image built, no warnings).
-- Backend contract inspected from `backend/internal/api/biometric.go` and
+- `pio run`: **passes** (ESP32 image built).
+- `pio test -e native`: **passes** (5 two-scan state-machine tests).
+- Backend contract inspected from `backend/internal/api/member_enrollment.go`,
+  `backend/internal/api/biometric.go` and
   `backend/internal/api/attendance_biometric_tasks.go`.
 - **No physical hardware testing has been performed.** R307S readers, the
   relay, the exit button, LEDs and buzzer are untested on real hardware.
@@ -234,12 +299,18 @@ Allowed event types on `/submit-event`: `fingerprint_scan`,
    every `WIFI_RETRY_INTERVAL` without blocking the loop.
 2. **`Device auth HTTP 401`** — `DEVICE_API_KEY` does not match a provisioned,
    active device in the backend.
-3. **Login denied, template not enrolled** — the finger matches on the sensor
-   but is not registered through `/enroll-fingerprint`, so the door stays
-   locked by design.
-4. **No fingerprint detected** — verify the reader UART pins and that both
+3. **Enrollment never starts** — confirm `ENROLLMENT_READER` is set to
+   `ENROLLMENT_READER_LOGIN` or `ENROLLMENT_READER_LOGOUT`, that reader was
+   detected at boot, and the member is still `pending_enrollment`.
+4. **Login denied, template not enrolled** — the finger matches on the sensor
+   but is not registered through the enrollment session workflow, so the door
+   stays locked by design.
+5. **No fingerprint detected** — verify the reader UART pins and that both
    readers are powered; sensors run at 57600 baud.
-5. **Door never unlocks** — confirm the relay active levels and that the device
+6. **Door never unlocks** — confirm the relay active levels and that the device
    is authenticated and enrolled.
-6. **Flash usage** — the build uses about 90% of the 1.3 MB app partition;
+7. **Enrollment stuck after a reboot** — the firmware reconciles the NVS
+   session UID and slot before claiming new work. Check the serial log for
+   `Pending enrollment recovery` and sensor cleanup errors.
+8. **Flash usage** — the build uses about 90% of the 1.3 MB app partition;
    keep an eye on it when adding libraries.

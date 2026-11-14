@@ -19,9 +19,12 @@
 #include "config.h"
 
 #include <Arduino.h>
+#include <HTTPClient.h>
+#include <Preferences.h>
 
 #include "R307S.h"
 #include "device_auth.h"
+#include "enrollment_flow.h"
 #include "wifi_manager.h"
 
 namespace {
@@ -30,6 +33,18 @@ enum SystemMode { MODE_IDLE, MODE_ENROLLMENT };
 
 R307S loginReader(LOGIN_UART, LOGIN_RX, LOGIN_TX);
 R307S logoutReader(LOGOUT_UART, LOGOUT_RX, LOGOUT_TX);
+
+R307S* enrollmentReader =
+#if ENROLLMENT_READER == ENROLLMENT_READER_LOGIN
+    &loginReader;
+#elif ENROLLMENT_READER == ENROLLMENT_READER_LOGOUT
+    &logoutReader;
+#else
+    nullptr;
+#endif
+
+bool enrollmentReaderReady = false;
+bool enrollmentDisabledLogged = false;
 
 SystemMode mode = MODE_IDLE;
 
@@ -44,14 +59,32 @@ unsigned long lastLogoutScan = 0;
 unsigned long lastHeartbeat = 0;
 unsigned long lastAuthAttempt = 0;
 unsigned long lastEnrollmentRefresh = 0;
+unsigned long lastEnrollmentPoll = 0;
 
 EnrollmentInfo enrollments[MAX_ENROLLMENTS];
 size_t enrollmentCount = 0;
 
-int enrollMemberId = 0;
-uint16_t enrollSlot = 0;
-int enrollPhase = 0;
-unsigned long lastEnrollScan = 0;
+struct ActiveEnrollment {
+  bool active = false;
+  String sessionUid;
+  String memberName;
+  int64_t memberId = 0;
+  uint16_t slot = 0;
+  bool slotStored = false;
+  enrollment_flow::Stage stage = enrollment_flow::Stage::Idle;
+  unsigned long lastScanAt = 0;
+  unsigned long lastStatusCheck = 0;
+  unsigned long lastCompleteAttempt = 0;
+  uint8_t scanErrors = 0;
+};
+
+ActiveEnrollment activeEnrollment;
+Preferences enrollmentPrefs;
+String persistedEnrollmentUid;
+uint16_t persistedEnrollmentSlot = 0;
+String persistedEnrollmentAction;
+String persistedFailureCode;
+String persistedFailureMessage;
 
 // ---------------------------------------------------------------------------
 // Indicators and lock
@@ -214,20 +247,134 @@ EnrollmentInfo* findEnrollment(uint16_t slot) {
   return nullptr;
 }
 
-uint16_t nextFreeSlot() {
-  for (uint16_t slot = 1; slot <= 127; slot++) {
-    bool used = false;
-    for (size_t i = 0; i < enrollmentCount; i++) {
-      if (enrollments[i].valid && enrollments[i].slot == slot) {
-        used = true;
-        break;
-      }
-    }
-    if (!used) {
-      return slot;
+bool slotIsFree(uint16_t slot, bool& freeSlot) {
+  freeSlot = false;
+  if (enrollmentReader == nullptr || slot < 1 || slot > 127) {
+    return false;
+  }
+  bool exists = false;
+  if (!enrollmentReader->templateExists(slot, exists)) {
+    return false;
+  }
+  if (exists) {
+    return true;
+  }
+  for (size_t i = 0; i < enrollmentCount; i++) {
+    if (enrollments[i].valid && enrollments[i].slot == slot) {
+      return true;
     }
   }
-  return 1;
+  freeSlot = true;
+  return true;
+}
+
+bool findFreeSlot(uint16_t& slot) {
+  for (uint16_t candidate = 1; candidate <= 127; candidate++) {
+    bool freeSlot = false;
+    if (!slotIsFree(candidate, freeSlot)) {
+      return false;
+    }
+    if (freeSlot) {
+      slot = candidate;
+      return true;
+    }
+  }
+  return false;
+}
+
+// ---------------------------------------------------------------------------
+// Enrollment NVS recovery
+// ---------------------------------------------------------------------------
+
+bool hasPersistedEnrollment() {
+  return persistedEnrollmentUid.length() > 0 && persistedEnrollmentSlot >= 1;
+}
+
+void clearPersistedEnrollment();
+
+void loadPersistedEnrollment() {
+  persistedEnrollmentUid = "";
+  persistedEnrollmentSlot = 0;
+  persistedEnrollmentAction = "";
+  persistedFailureCode = "";
+  persistedFailureMessage = "";
+  if (!enrollmentPrefs.begin("enrollment", true)) {
+    return;
+  }
+  persistedEnrollmentUid = enrollmentPrefs.getString("session_uid", "");
+  persistedEnrollmentSlot = enrollmentPrefs.getUShort("slot", 0);
+  persistedEnrollmentAction = enrollmentPrefs.getString("action", "");
+  persistedFailureCode = enrollmentPrefs.getString("error_code", "");
+  persistedFailureMessage = enrollmentPrefs.getString("error_message", "");
+  enrollmentPrefs.end();
+  if (persistedEnrollmentSlot > 127) {
+    persistedEnrollmentSlot = 0;
+  }
+  if (persistedEnrollmentUid.length() > 0 && persistedEnrollmentSlot >= 1) {
+    if (persistedEnrollmentAction != "complete" && persistedEnrollmentAction != "fail") {
+      persistedEnrollmentAction = "fail";
+      persistedFailureCode = "device_recovery";
+      persistedFailureMessage = "Enrollment was interrupted before its outcome was confirmed";
+    }
+    Serial.print("Pending enrollment recovery: ");
+    Serial.print(persistedEnrollmentUid);
+    Serial.print(" slot ");
+    Serial.print(static_cast<unsigned>(persistedEnrollmentSlot));
+    Serial.print(" action ");
+    Serial.println(persistedEnrollmentAction);
+  } else if (persistedEnrollmentUid.length() > 0 || persistedEnrollmentSlot > 0) {
+    clearPersistedEnrollment();
+  } else {
+    persistedEnrollmentUid = "";
+    persistedEnrollmentSlot = 0;
+  }
+}
+
+bool savePersistedEnrollment(const String& sessionUid, uint16_t slot,
+                             const String& action = "complete",
+                             const String& errorCode = "",
+                             const String& errorMessage = "") {
+  if (!enrollmentPrefs.begin("enrollment", false)) {
+    return false;
+  }
+  bool ok = enrollmentPrefs.putString("session_uid", sessionUid) == sessionUid.length();
+  ok = enrollmentPrefs.putUShort("slot", slot) == sizeof(uint16_t) && ok;
+  ok = enrollmentPrefs.putString("action", action) == action.length() && ok;
+  ok = enrollmentPrefs.putString("error_code", errorCode) == errorCode.length() && ok;
+  ok = enrollmentPrefs.putString("error_message", errorMessage) == errorMessage.length() && ok;
+  if (!ok) {
+    enrollmentPrefs.remove("session_uid");
+    enrollmentPrefs.remove("slot");
+    enrollmentPrefs.remove("action");
+    enrollmentPrefs.remove("error_code");
+    enrollmentPrefs.remove("error_message");
+  }
+  enrollmentPrefs.end();
+  if (ok) {
+    persistedEnrollmentUid = sessionUid;
+    persistedEnrollmentSlot = slot;
+    persistedEnrollmentAction = action;
+    persistedFailureCode = errorCode;
+    persistedFailureMessage = errorMessage;
+  }
+  return ok;
+}
+
+void clearPersistedEnrollment() {
+  persistedEnrollmentUid = "";
+  persistedEnrollmentSlot = 0;
+  persistedEnrollmentAction = "";
+  persistedFailureCode = "";
+  persistedFailureMessage = "";
+  if (!enrollmentPrefs.begin("enrollment", false)) {
+    return;
+  }
+  enrollmentPrefs.remove("session_uid");
+  enrollmentPrefs.remove("slot");
+  enrollmentPrefs.remove("action");
+  enrollmentPrefs.remove("error_code");
+  enrollmentPrefs.remove("error_message");
+  enrollmentPrefs.end();
 }
 
 void handleHeartbeat() {
@@ -335,81 +482,552 @@ void recordLogoutScan() {
 // Enrollment
 // ---------------------------------------------------------------------------
 
-void enrollFingerprintComplete() {
-  String slotRef = String("slot:") + String(static_cast<unsigned>(enrollSlot));
-  String templateRef = String("r307s:") + slotRef;
-  if (submitFingerprintEnrollment(enrollMemberId, templateRef, slotRef)) {
-    successSignal();
-    refreshEnrollmentsIfDue(true);
-    Serial.println("Enrollment confirmed by backend");
-  } else {
-    errorSignal();
-    Serial.println("Enrollment rejected by backend");
+bool deleteEnrollmentSlot(uint16_t slot) {
+  if (slot < 1 || slot > 127) {
+    return true;
   }
-  mode = MODE_IDLE;
-  enrollPhase = 0;
+  if (enrollmentReader == nullptr) {
+    return false;
+  }
+  if (!enrollmentReader->deleteModel(slot)) {
+    Serial.print("Enrollment cleanup failed, sensor confirmation ");
+    Serial.println(enrollmentReader->lastConfirmation());
+    return false;
+  }
+  return true;
 }
 
-void enrollNextScan() {
-  if (mode != MODE_ENROLLMENT) {
-    return;
+bool acknowledgeCleanup(const String& sessionUid, uint16_t slot) {
+  if (sessionUid.length() == 0) {
+    return false;
   }
-  if (millis() - lastEnrollScan < SCAN_DEBOUNCE_MS) {
+  EnrollmentSessionInfo info;
+  int httpCode = 0;
+  if (!acknowledgeEnrollmentCleanup(sessionUid, slot, info, httpCode)) {
+    return false;
+  }
+  return httpCode == HTTP_CODE_OK;
+}
+
+void stopEnrollment(bool success, const String& reason) {
+  if (success) {
+    successSignal();
+  } else {
+    errorSignal();
+  }
+  if (reason.length() > 0) {
+    Serial.print("Enrollment stopped: ");
+    Serial.println(reason);
+  }
+  activeEnrollment = ActiveEnrollment();
+  mode = MODE_IDLE;
+  lastEnrollmentPoll = millis();
+}
+
+void handleTerminalEnrollment(const EnrollmentSessionInfo& info, bool deleteLocalTemplate) {
+  if (info.status == "finalized") {
+    clearPersistedEnrollment();
+    refreshEnrollmentsIfDue(true);
+    stopEnrollment(true, "finalized");
     return;
   }
 
-  if (enrollPhase == 0) {
-    if (!loginReader.getImage(nullptr)) {
+  bool shouldDelete = deleteLocalTemplate || info.cleanupRequired;
+  if (info.status == "failed" && info.errorCode == "slot_conflict") {
+    shouldDelete = false;
+  }
+
+  uint16_t slot = activeEnrollment.slotStored ? activeEnrollment.slot : persistedEnrollmentSlot;
+  String sessionUid = activeEnrollment.sessionUid.length() > 0
+                          ? activeEnrollment.sessionUid
+                          : persistedEnrollmentUid;
+
+  if (shouldDelete && slot >= 1) {
+    if (!deleteEnrollmentSlot(slot)) {
+      stopEnrollment(false, "cleanup pending");
       return;
     }
-    if (!loginReader.img2tz(static_cast<uint8_t>(1))) {
-      errorSignal();
-      return;
+    if (info.cleanupRequired) {
+      acknowledgeCleanup(sessionUid, slot);
     }
-    lastEnrollScan = millis();
-    enrollPhase = 1;
-    buzzPattern(1);
-    Serial.println("First scan captured; scan the same finger again");
+  }
+
+  clearPersistedEnrollment();
+  String reason = info.status.length() > 0 ? info.status : String("rejected");
+  if (info.errorCode.length() > 0) {
+    reason += " (";
+    reason += info.errorCode;
+    reason += ")";
+  }
+  stopEnrollment(false, reason);
+}
+
+void reconcileActiveEnrollment() {
+  EnrollmentSessionInfo info;
+  String action;
+  int httpCode = 0;
+  if (!fetchEnrollmentSession(activeEnrollment.sessionUid, info, action, httpCode)) {
+    if (httpCode == HTTP_CODE_NOT_FOUND) {
+      handleTerminalEnrollment(info, true);
+    }
+    return;
+  }
+  if (action == "finalized" || info.status == "finalized") {
+    handleTerminalEnrollment(info, false);
+    return;
+  }
+  if (info.cleanupRequired || action == "cleanup") {
+    handleTerminalEnrollment(info, true);
+    return;
+  }
+  if (!info.valid) {
+    return;
+  }
+  if (!info.active || info.status == "cancelled" || info.status == "expired" ||
+      info.status == "failed") {
+    handleTerminalEnrollment(info, true);
+  }
+}
+
+bool reportActiveProgress(const char* status, int slot) {
+  EnrollmentSessionInfo info;
+  int httpCode = 0;
+  if (!updateEnrollmentProgress(activeEnrollment.sessionUid, status, slot, "", "", info, httpCode)) {
+    return false;
+  }
+  if (httpCode == HTTP_CODE_OK) {
+    return true;
+  }
+  if (httpCode == HTTP_CODE_CONFLICT && info.valid) {
+    handleTerminalEnrollment(info, true);
+  }
+  return false;
+}
+
+void attemptEnrollmentCompletion() {
+  if (!activeEnrollment.active || activeEnrollment.stage != enrollment_flow::Stage::Finalizing) {
+    return;
+  }
+  if (millis() - activeEnrollment.lastCompleteAttempt < ENROLLMENT_RECONCILE_INTERVAL) {
+    return;
+  }
+  activeEnrollment.lastCompleteAttempt = millis();
+
+  EnrollmentSessionInfo info;
+  int httpCode = 0;
+  if (!completeEnrollment(activeEnrollment.sessionUid, activeEnrollment.slot, info, httpCode)) {
+    Serial.println("Enrollment completion request failed; will retry");
+    return;
+  }
+  if (httpCode == HTTP_CODE_OK) {
+    clearPersistedEnrollment();
+    refreshEnrollmentsIfDue(true);
+    stopEnrollment(true, "finalized");
+    return;
+  }
+  if (httpCode == HTTP_CODE_UNAUTHORIZED || httpCode == HTTP_CODE_FORBIDDEN) {
+    return;
+  }
+  if (httpCode == HTTP_CODE_CONFLICT) {
+    if (info.valid) {
+      handleTerminalEnrollment(info, true);
+    } else {
+      reconcileActiveEnrollment();
+    }
+    return;
+  }
+  if (httpCode == HTTP_CODE_NOT_FOUND) {
+    handleTerminalEnrollment(info, true);
+    return;
+  }
+  Serial.print("Enrollment completion HTTP ");
+  Serial.println(httpCode);
+}
+
+void failActiveEnrollment(const String& errorCode, const String& message) {
+  bool failureStateSaved = true;
+  if (activeEnrollment.slotStored) {
+    failureStateSaved = savePersistedEnrollment(activeEnrollment.sessionUid, activeEnrollment.slot,
+                                                "fail", errorCode, message);
+  }
+
+  EnrollmentSessionInfo info;
+  int httpCode = 0;
+  int slot = activeEnrollment.slotStored ? activeEnrollment.slot : 0;
+  bool reported = failEnrollment(activeEnrollment.sessionUid, slot, errorCode, message, info, httpCode);
+  bool cleared = true;
+  if (activeEnrollment.slotStored) {
+    cleared = deleteEnrollmentSlot(activeEnrollment.slot);
+    if (cleared && reported &&
+        (httpCode == HTTP_CODE_OK || (httpCode == HTTP_CODE_CONFLICT && info.cleanupRequired))) {
+      acknowledgeCleanup(activeEnrollment.sessionUid, activeEnrollment.slot);
+    }
+  }
+  if (cleared) {
+    clearPersistedEnrollment();
+  } else if (!failureStateSaved) {
+    clearPersistedEnrollment();
+    Serial.println("Enrollment cleanup failed without recovery state; slot may be orphaned");
+  }
+  stopEnrollment(false, errorCode);
+}
+
+bool detectDuplicateFinger(uint16_t ownSlot, bool& duplicate) {
+  duplicate = false;
+  uint16_t foundSlot = 0;
+  if (ownSlot > 1) {
+    if (enrollmentReader->searchRange(1, static_cast<uint16_t>(ownSlot - 1), foundSlot)) {
+      duplicate = true;
+      return true;
+    }
+    if (enrollmentReader->lastConfirmation() != R307S_ERR_NOTFOUND) {
+      return false;
+    }
+  }
+  if (ownSlot < 127) {
+    if (enrollmentReader->searchRange(static_cast<uint16_t>(ownSlot + 1),
+                                      static_cast<uint16_t>(127 - ownSlot), foundSlot)) {
+      duplicate = true;
+      return true;
+    }
+    if (enrollmentReader->lastConfirmation() != R307S_ERR_NOTFOUND) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void processActiveEnrollment() {
+  if (!activeEnrollment.active) {
+    mode = MODE_IDLE;
     return;
   }
 
-  if (!loginReader.getImage(nullptr)) {
+  if (millis() - activeEnrollment.lastStatusCheck >= ENROLLMENT_RECONCILE_INTERVAL) {
+    activeEnrollment.lastStatusCheck = millis();
+    reconcileActiveEnrollment();
+    if (!activeEnrollment.active) {
+      return;
+    }
+  }
+
+  if (activeEnrollment.stage == enrollment_flow::Stage::Finalizing) {
+    attemptEnrollmentCompletion();
     return;
   }
-  if (!loginReader.img2tz(static_cast<uint8_t>(2))) {
-    errorSignal();
+
+  if (millis() - activeEnrollment.lastScanAt < ENROLLMENT_SCAN_INTERVAL) {
     return;
   }
-  if (!loginReader.regModel()) {
-    errorSignal();
-    enrollPhase = 0;
+  activeEnrollment.lastScanAt = millis();
+
+  switch (activeEnrollment.stage) {
+    case enrollment_flow::Stage::WaitingFirstScan: {
+      if (!enrollmentReader->getImage(nullptr)) {
+        if (enrollmentReader->lastConfirmation() == R307S_ERR_NOFINGER) {
+          activeEnrollment.scanErrors = 0;
+          return;
+        }
+        activeEnrollment.scanErrors++;
+        if (activeEnrollment.scanErrors >= 3) {
+          failActiveEnrollment("sensor_error", "Unable to capture the first fingerprint image");
+        }
+        return;
+      }
+      activeEnrollment.scanErrors = 0;
+      if (!enrollmentReader->img2tz(static_cast<uint8_t>(1))) {
+        failActiveEnrollment("first_scan_failed", "Unable to process the first fingerprint image");
+        return;
+      }
+      activeEnrollment.stage =
+          enrollment_flow::next(activeEnrollment.stage, enrollment_flow::Event::FirstCaptured);
+      buzzPattern(1);
+      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+      return;
+    }
+    case enrollment_flow::Stage::FirstScanCaptured: {
+      activeEnrollment.stage = enrollment_flow::next(
+          activeEnrollment.stage, enrollment_flow::Event::FirstCaptureReported);
+      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+      return;
+    }
+    case enrollment_flow::Stage::WaitingFingerRemoval: {
+      if (enrollmentReader->getImage(nullptr)) {
+        return;
+      }
+      if (enrollmentReader->lastConfirmation() != R307S_ERR_NOFINGER) {
+        activeEnrollment.scanErrors++;
+        if (activeEnrollment.scanErrors >= 3) {
+          failActiveEnrollment("sensor_error", "Finger removal could not be detected");
+        }
+        return;
+      }
+      activeEnrollment.scanErrors = 0;
+      activeEnrollment.stage = enrollment_flow::next(
+          activeEnrollment.stage, enrollment_flow::Event::FingerRemoved);
+      buzzPattern(1);
+      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+      return;
+    }
+    case enrollment_flow::Stage::WaitingSecondScan: {
+      if (!enrollmentReader->getImage(nullptr)) {
+        if (enrollmentReader->lastConfirmation() == R307S_ERR_NOFINGER) {
+          activeEnrollment.scanErrors = 0;
+          return;
+        }
+        activeEnrollment.scanErrors++;
+        if (activeEnrollment.scanErrors >= 3) {
+          failActiveEnrollment("sensor_error", "Unable to capture the second fingerprint image");
+        }
+        return;
+      }
+      activeEnrollment.scanErrors = 0;
+      if (!enrollmentReader->img2tz(static_cast<uint8_t>(2))) {
+        failActiveEnrollment("second_scan_failed", "Unable to process the second fingerprint image");
+        return;
+      }
+
+      activeEnrollment.stage =
+          enrollment_flow::next(activeEnrollment.stage, enrollment_flow::Event::SecondCaptured);
+      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+      if (!activeEnrollment.active) {
+        return;
+      }
+
+      uint16_t score = 0;
+      if (!enrollmentReader->match(score) || score < 50) {
+        failActiveEnrollment("finger_mismatch", "The two scans did not match the same finger");
+        return;
+      }
+      if (!enrollmentReader->regModel()) {
+        failActiveEnrollment("template_merge_failed", "Unable to create a fingerprint template");
+        return;
+      }
+
+      uint16_t slot = 0;
+      if (!findFreeSlot(slot)) {
+        failActiveEnrollment("no_free_slot", "No free fingerprint slot is available");
+        return;
+      }
+      activeEnrollment.slot = slot;
+      if (!savePersistedEnrollment(activeEnrollment.sessionUid, slot)) {
+        failActiveEnrollment("recovery_state_failed", "Unable to persist enrollment recovery state");
+        return;
+      }
+      if (!enrollmentReader->storeModel(slot)) {
+        failActiveEnrollment("sensor_store_failed", "Unable to store the fingerprint template");
+        return;
+      }
+      activeEnrollment.slotStored = true;
+
+      bool duplicate = false;
+      if (!detectDuplicateFinger(slot, duplicate)) {
+        failActiveEnrollment("duplicate_check_failed", "Unable to check for duplicate fingerprints");
+        return;
+      }
+      if (duplicate) {
+        failActiveEnrollment("duplicate_fingerprint", "This fingerprint is already enrolled");
+        return;
+      }
+
+      activeEnrollment.stage =
+          enrollment_flow::next(activeEnrollment.stage, enrollment_flow::Event::TemplateReady);
+      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), slot);
+      if (!activeEnrollment.active) {
+        return;
+      }
+      activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
+      activeEnrollment.lastCompleteAttempt = 0;
+      attemptEnrollmentCompletion();
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+void startActiveEnrollment(const EnrollmentSessionInfo& info) {
+  activeEnrollment = ActiveEnrollment();
+  activeEnrollment.active = true;
+  activeEnrollment.sessionUid = info.sessionUid;
+  activeEnrollment.memberId = info.memberId;
+  activeEnrollment.memberName = info.memberName;
+  activeEnrollment.lastScanAt = millis();
+  activeEnrollment.lastStatusCheck = millis();
+  activeEnrollment.stage = enrollment_flow::Stage::WaitingFirstScan;
+  mode = MODE_ENROLLMENT;
+  setLEDStatus(true, false, false);
+
+  Serial.print("Enrollment started for ");
+  Serial.print(info.memberName.length() > 0 ? info.memberName : String("member"));
+  Serial.print(", session ");
+  Serial.println(info.sessionUid);
+
+  if (info.slot >= 1 && info.slot <= 127) {
+    bool exists = false;
+    if (enrollmentReader->templateExists(static_cast<uint16_t>(info.slot), exists) && exists) {
+      activeEnrollment.slot = static_cast<uint16_t>(info.slot);
+      activeEnrollment.slotStored = true;
+      activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
+      savePersistedEnrollment(activeEnrollment.sessionUid, activeEnrollment.slot);
+      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), activeEnrollment.slot);
+      return;
+    }
+  }
+
+  reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+}
+
+bool reconcilePersistedEnrollment() {
+  EnrollmentSessionInfo info;
+  String action;
+  int httpCode = 0;
+  if (!fetchEnrollmentSession(persistedEnrollmentUid, info, action, httpCode)) {
+    if (httpCode == HTTP_CODE_NOT_FOUND) {
+      if (!deleteEnrollmentSlot(persistedEnrollmentSlot)) {
+        return false;
+      }
+      clearPersistedEnrollment();
+      return true;
+    }
+    return false;
+  }
+  if (action == "finalized" || info.status == "finalized") {
+    clearPersistedEnrollment();
+    return true;
+  }
+  if (info.cleanupRequired || action == "cleanup") {
+    if (!deleteEnrollmentSlot(persistedEnrollmentSlot)) {
+      return false;
+    }
+    acknowledgeCleanup(persistedEnrollmentUid, persistedEnrollmentSlot);
+    clearPersistedEnrollment();
+    return true;
+  }
+
+  if (info.valid && info.active) {
+    bool exists = false;
+    if (!enrollmentReader->templateExists(persistedEnrollmentSlot, exists)) {
+      return false;
+    }
+    if (!exists) {
+      EnrollmentSessionInfo ignored;
+      int failCode = 0;
+      failEnrollment(persistedEnrollmentUid, 0, "local_template_missing",
+                     "Stored fingerprint template is missing from the sensor",
+                     ignored, failCode);
+      clearPersistedEnrollment();
+      return true;
+    }
+
+    if (persistedEnrollmentAction == "fail") {
+      String errorCode = persistedFailureCode.length() > 0 ? persistedFailureCode : String("device_recovery");
+      String errorMessage = persistedFailureMessage.length() > 0
+                                ? persistedFailureMessage
+                                : String("Enrollment was interrupted on the device");
+      EnrollmentSessionInfo failed;
+      int failCode = 0;
+      bool reported = failEnrollment(persistedEnrollmentUid, persistedEnrollmentSlot,
+                                     errorCode, errorMessage, failed, failCode);
+      if (!reported) {
+        return false;
+      }
+      if (failCode == HTTP_CODE_UNAUTHORIZED || failCode == HTTP_CODE_FORBIDDEN) {
+        return false;
+      }
+      if (failCode == HTTP_CODE_NOT_FOUND) {
+        if (!deleteEnrollmentSlot(persistedEnrollmentSlot)) {
+          return false;
+        }
+        clearPersistedEnrollment();
+        return true;
+      }
+      if (failCode != HTTP_CODE_OK && failCode != HTTP_CODE_CONFLICT) {
+        return false;
+      }
+      if (!deleteEnrollmentSlot(persistedEnrollmentSlot)) {
+        return false;
+      }
+      if (failed.cleanupRequired) {
+        acknowledgeCleanup(persistedEnrollmentUid, persistedEnrollmentSlot);
+      }
+      clearPersistedEnrollment();
+      return true;
+    }
+
+    activeEnrollment = ActiveEnrollment();
+    activeEnrollment.active = true;
+    activeEnrollment.sessionUid = persistedEnrollmentUid;
+    activeEnrollment.memberId = info.memberId;
+    activeEnrollment.memberName = info.memberName;
+    activeEnrollment.slot = persistedEnrollmentSlot;
+    activeEnrollment.slotStored = true;
+    activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
+    activeEnrollment.lastStatusCheck = millis();
+    mode = MODE_ENROLLMENT;
+    setLEDStatus(true, false, false);
+    reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage),
+                         activeEnrollment.slot);
+    return true;
+  }
+
+  if (!info.valid) {
+    return false;
+  }
+
+  bool deleteLocal = !(info.status == "failed" && info.errorCode == "slot_conflict");
+  if (deleteLocal) {
+    if (!deleteEnrollmentSlot(persistedEnrollmentSlot)) {
+      return false;
+    }
+  }
+  clearPersistedEnrollment();
+  return true;
+}
+
+void processEnrollmentCommand() {
+  if (mode != MODE_IDLE) {
     return;
   }
-  if (!loginReader.storeModel(enrollSlot)) {
-    errorSignal();
-    enrollPhase = 0;
+  if (enrollmentReader == nullptr || !enrollmentReaderReady) {
+    if (!enrollmentDisabledLogged) {
+      enrollmentDisabledLogged = true;
+      Serial.println("Enrollment reader is not configured or not detected; enrollment disabled");
+    }
     return;
   }
-  lastEnrollScan = millis();
-  enrollFingerprintComplete();
+  if (!isWifiConnected() || !isDeviceAuthenticated()) {
+    return;
+  }
+  if (millis() - lastEnrollmentPoll < ENROLLMENT_POLL_INTERVAL) {
+    return;
+  }
+  lastEnrollmentPoll = millis();
+
+  if (hasPersistedEnrollment()) {
+    reconcilePersistedEnrollment();
+    return;
+  }
+
+  EnrollmentSessionInfo info;
+  String action;
+  int httpCode = 0;
+  if (!fetchEnrollmentCommand(info, action, httpCode)) {
+    return;
+  }
+  if (action == "cleanup") {
+    if (info.slot >= 1 && !deleteEnrollmentSlot(static_cast<uint16_t>(info.slot))) {
+      return;
+    }
+    acknowledgeCleanup(info.sessionUid, info.slot >= 1 ? static_cast<uint16_t>(info.slot) : 0);
+    return;
+  }
+  if (action == "enroll" && info.active) {
+    startActiveEnrollment(info);
+  }
 }
 
 } // namespace
-
-// Starts enrollment for a member. Call this from an enrolment trigger (for
-// example an admin provisioning command) when the member should be enrolled.
-// Kept with external linkage so it can be invoked from future integrations.
-void enrollFingerprintBegin(int memberId) {
-  enrollMemberId = memberId;
-  enrollSlot = nextFreeSlot();
-  enrollPhase = 0;
-  mode = MODE_ENROLLMENT;
-  setLEDStatus(true, false, false);
-  Serial.print("Enrollment started for member ");
-  Serial.print(memberId);
-  Serial.print(" into slot ");
-  Serial.println(enrollSlot);
-}
 
 // ---------------------------------------------------------------------------
 // Arduino entry points
@@ -440,6 +1058,17 @@ void setup() {
   Serial.println(loginReady ? "ready" : "not detected");
   Serial.print("Logout reader: ");
   Serial.println(logoutReady ? "ready" : "not detected");
+
+#if ENROLLMENT_READER == ENROLLMENT_READER_LOGIN
+  enrollmentReaderReady = loginReady;
+#elif ENROLLMENT_READER == ENROLLMENT_READER_LOGOUT
+  enrollmentReaderReady = logoutReady;
+#else
+  enrollmentReaderReady = false;
+#endif
+  loadPersistedEnrollment();
+  Serial.print("Enrollment reader: ");
+  Serial.println(enrollmentReaderReady ? "ready" : "disabled or not detected");
 
   wifiBegin();
   Serial.println("Wi-Fi connection started");
@@ -478,10 +1107,13 @@ void loop() {
   }
 
   if (mode == MODE_ENROLLMENT) {
-    enrollNextScan();
+    processActiveEnrollment();
   } else {
-    recordLoginScan();
-    recordLogoutScan();
+    processEnrollmentCommand();
+    if (mode == MODE_IDLE) {
+      recordLoginScan();
+      recordLogoutScan();
+    }
   }
 
   delay(5);

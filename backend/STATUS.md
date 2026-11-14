@@ -39,11 +39,12 @@ The backend is a Go application (Gin + GORM + PostgreSQL). No Ruby or Rails file
 - `pgcrypto` is created on startup.
 - No GORM `AutoMigrate` is used; schema changes must be added as numbered SQL migrations.
 - `0004_device_provisioning.sql` adds `device_uid` (unique), `token_version` and `revoked_at`.
+- `0005_member_fingerprint_enrollment.sql` adds `biometric_enrollments.fingerprint_slot`, `member_enrollment_sessions`, and slot/session uniqueness constraints.
 
 ### Authentication and APIs
 
 - Two administrators are provisioned from `ADMIN_ONE_PASSWORD` and `ADMIN_TWO_PASSWORD` (each ≥12 characters); `ADMIN_BOOTSTRAP_RESET_PASSWORDS=true` resets existing passwords once.
-- Member and admin authentication, sessions, OTP, password reset, member/admin management, attendance, biometric device auth/enrollment/events, borrowing, returns, inventory, messaging, announcements, notifications, tasks, events, FAQs, contact, analytics, audit logs, and uploads are implemented in `internal/api`.
+- Member and admin authentication, sessions, OTP, password reset, member/admin management, attendance, biometric device auth/two-scan enrollment/events, borrowing, returns, inventory, messaging, announcements, notifications, tasks, events, FAQs, contact, analytics, audit logs, and uploads are implemented in `internal/api`.
 - Device authentication uses `POST /api/v1/biometric/authenticate-device` with an API key whose SHA-256 digest is stored in `device_registrations.api_key_digest`.
 - Admin-only device provisioning lives at `/api/v1/devices` (create/list/show/rotate-key/revoke). Raw keys are returned once; rotation and revocation increment `token_version`, which invalidates existing device tokens.
 
@@ -70,7 +71,7 @@ Optional: email (Resend or Gmail SMTP), Twilio Verify, `BIOMETRIC_API_SECRET`, u
 2. **Admin passwords** — set `ADMIN_ONE_PASSWORD` and `ADMIN_TWO_PASSWORD` (≥12 characters).
 3. **Email provider** — set `RESEND_API_KEY` or `GMAIL_USERNAME` / `GMAIL_APP_PASSWORD`.
 4. **Render service** — verify the service points at `backend/Dockerfile`, uses the `backend/` context, and has all secrets set.
-5. **Biometric hardware** — R307S/ESP32 enrollment and unlock still require physical device testing.
+5. **Biometric hardware** — backend and firmware two-scan enrollment are implemented; R307S/ESP32 enrollment and unlock still require physical device testing.
 6. **Android release** — configure a signing keystore outside the repository and build a signed APK from `frontend/android`.
 7. **Upload persistence** — the container filesystem is ephemeral; attach a persistent disk or object storage if uploads must survive redeploys.
 

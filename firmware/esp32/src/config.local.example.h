@@ -29,4 +29,10 @@
 // #define RED_LED 22
 // #define BUZZER_PIN 21
 
+// Enrollment is fail-closed by default. Set this to the reader physically
+// shared with the login or logout sensor. There is no spare UART for a third
+// reader on the ALF V1.0 board.
+// #define ENROLLMENT_READER ENROLLMENT_READER_LOGIN
+// #define ENROLLMENT_READER ENROLLMENT_READER_LOGOUT
+
 #endif // CONFIG_LOCAL_H

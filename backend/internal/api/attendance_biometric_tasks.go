@@ -31,6 +31,13 @@ func (s *Server) registerBiometricRoutes(api *gin.RouterGroup) {
 	biometric.POST("/enroll-fingerprint", s.RequireDevice(), s.enrollFingerprint)
 	biometric.GET("/enrollments", s.RequireDevice(), s.listBiometricEnrollments)
 	biometric.DELETE("/enrollments/:id", s.RequireDevice(), s.removeBiometricEnrollment)
+	biometric.POST("/readers", s.RequireDevice(), s.reportDeviceReaders)
+	biometric.GET("/enrollment-session", s.RequireDevice(), s.claimEnrollmentSession)
+	biometric.GET("/enrollment-sessions/:uid", s.RequireDevice(), s.showEnrollmentSessionForDevice)
+	biometric.POST("/enrollment-sessions/:uid/progress", s.RequireDevice(), s.updateEnrollmentSessionProgress)
+	biometric.POST("/enrollment-sessions/:uid/complete", s.RequireDevice(), s.completeEnrollmentSession)
+	biometric.POST("/enrollment-sessions/:uid/fail", s.RequireDevice(), s.failEnrollmentSession)
+	biometric.POST("/enrollment-sessions/:uid/cleanup", s.RequireDevice(), s.acknowledgeEnrollmentCleanup)
 	biometric.GET("/status", s.RequireDevice(), s.biometricDeviceStatus)
 	// submit-event also supports HMAC-only submissions without a device token.
 	biometric.POST("/submit-event", s.RateLimit("biometric-event", 240, time.Minute), s.OptionalDevice(), s.submitBiometricEvent)
