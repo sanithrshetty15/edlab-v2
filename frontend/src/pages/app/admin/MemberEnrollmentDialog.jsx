@@ -6,6 +6,8 @@ import {
   AppButton,
   Badge,
   DefinitionList,
+  Field,
+  Select,
   Spinner,
 } from "../../../components/app/Ui";
 import {
@@ -16,6 +18,7 @@ import {
   XCircleIcon,
 } from "../../../components/app/AppIcons";
 import { formatDate } from "../../../utils/format";
+import MemberRegistrationProgress from "./MemberRegistrationProgress";
 
 const ENROLLMENT_STEPS = [
   {
@@ -164,6 +167,16 @@ export default function MemberEnrollmentDialog({
   const [error, setError] = useState(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [success, setSuccess] = useState(initialEnrollment?.status === "finalized");
+  const [readersInfo, setReadersInfo] = useState(null);
+  const [selectedReaderKey, setSelectedReaderKey] = useState(
+    initialEnrollment?.reader_key || "",
+  );
+  const [readersBusy, setReadersBusy] = useState(false);
+  const [readersError, setReadersError] = useState(null);
+  const [registrationEmail, setRegistrationEmail] = useState(null);
+  const [emailBusy, setEmailBusy] = useState(false);
+  const [emailError, setEmailError] = useState(null);
+  const [emailPollNonce, setEmailPollNonce] = useState(0);
   const finalizedRef = useRef(success);
 
   const isActive = Boolean(
@@ -172,11 +185,18 @@ export default function MemberEnrollmentDialog({
   const isTerminal = Boolean(session && TERMINAL_STATUSES.has(session.status));
   const canClose = !isActive || success;
   const copy = statusCopy(session);
+  const readers = readersInfo?.readers || [];
+  const availableReaders = readers.filter((reader) => reader.available);
+  const selectedReader = readers.find((reader) => reader.key === selectedReaderKey);
+  const canStart = Boolean(selectedReaderKey && readersInfo?.device?.id && selectedReader?.available);
 
   const applyResult = useCallback(
     (result) => {
       if (result?.enrollment) {
         setSession(result.enrollment);
+      }
+      if (result?.registration_email !== undefined) {
+        setRegistrationEmail(result.registration_email);
       }
       if (result?.enrollment?.status === "finalized") {
         setSuccess(true);
@@ -188,6 +208,84 @@ export default function MemberEnrollmentDialog({
     },
     [onFinalized],
   );
+
+  const applyReadersResult = useCallback((result) => {
+    setReadersInfo(result);
+    const readerList = result?.readers || [];
+    setSelectedReaderKey((current) => {
+      if (current && readerList.some((reader) => reader.key === current)) {
+        return current;
+      }
+      if (
+        result?.selected_reader_key &&
+        readerList.some((reader) => reader.key === result.selected_reader_key)
+      ) {
+        return result.selected_reader_key;
+      }
+      return readerList.find((reader) => reader.available)?.key || readerList[0]?.key || "";
+    });
+  }, []);
+
+  const loadReaders = useCallback(async () => {
+    setReadersBusy(true);
+    setReadersError(null);
+    try {
+      const result = await membersManagementApi.getEnrollmentReaders(member.id);
+      applyReadersResult(result);
+    } catch (readerError) {
+      setReadersError(readerError);
+    } finally {
+      setReadersBusy(false);
+    }
+  }, [applyReadersResult, member.id]);
+
+  useEffect(() => {
+    let stopped = false;
+
+    const loadInitialReaders = async () => {
+      try {
+        const result = await membersManagementApi.getEnrollmentReaders(member.id);
+        if (stopped) return;
+        applyReadersResult(result);
+        setReadersError(null);
+      } catch (readerError) {
+        if (!stopped) setReadersError(readerError);
+      }
+    };
+
+    loadInitialReaders();
+    return () => {
+      stopped = true;
+    };
+  }, [applyReadersResult, member.id]);
+
+  useEffect(() => {
+    if (!success) return undefined;
+    let stopped = false;
+    let timer = null;
+
+    const loadEmail = async () => {
+      try {
+        const result = await membersManagementApi.getRegistrationEmail(member.id);
+        if (stopped) return;
+        setRegistrationEmail(result.registration_email || null);
+        setEmailError(null);
+        const status = result.registration_email?.status;
+        if (status === "sent" || status === "failed") {
+          window.clearInterval(timer);
+        }
+      } catch (emailPollError) {
+        if (!stopped) setEmailError(emailPollError);
+      }
+    };
+
+    loadEmail();
+    timer = window.setInterval(loadEmail, 2500);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [emailPollNonce, success, member.id]);
 
   useEffect(() => {
     if (!isActive || success) return undefined;
@@ -218,15 +316,38 @@ export default function MemberEnrollmentDialog({
 
   const handleStart = async () => {
     if (busy) return;
+    if (!selectedReaderKey) {
+      setError(new Error("Select an enrollment reader before starting."));
+      return;
+    }
     setBusy("start");
     setError(null);
     try {
-      const result = await membersManagementApi.startFingerprintEnrollment(member.id);
+      const result = await membersManagementApi.startFingerprintEnrollment(member.id, {
+        device_registration_id: readersInfo?.device?.id,
+        reader_key: selectedReaderKey,
+      });
       applyResult(result);
     } catch (startError) {
       setError(startError);
+      loadReaders();
     } finally {
       setBusy(null);
+    }
+  };
+
+  const handleRetryEmail = async () => {
+    if (emailBusy) return;
+    setEmailBusy(true);
+    setEmailError(null);
+    try {
+      const result = await membersManagementApi.retryRegistrationEmail(member.id);
+      setRegistrationEmail(result.registration_email || null);
+      setEmailPollNonce((current) => current + 1);
+    } catch (retryError) {
+      setEmailError(retryError);
+    } finally {
+      setEmailBusy(false);
     }
   };
 
@@ -284,7 +405,12 @@ export default function MemberEnrollmentDialog({
             Refresh status
           </AppButton>
         ) : (
-          <AppButton variant="primary" onClick={handleStart} loading={busy === "start"}>
+          <AppButton
+            variant="primary"
+            onClick={handleStart}
+            loading={busy === "start"}
+            disabled={!canStart || readersBusy}
+          >
             {session && ["failed", "expired"].includes(session.status)
               ? "Retry enrollment"
               : "Start enrollment"}
@@ -299,12 +425,14 @@ export default function MemberEnrollmentDialog({
         open
         onClose={handleClose}
         dismissible={canClose}
-        title={success ? "Member activated" : "Fingerprint enrollment"}
+        title={success ? "Registration complete" : "Fingerprint enrollment"}
         description={`${member?.name || "Member"} · ${member?.login_id || member?.email || ""}`}
         size="lg"
         footer={footer}
       >
         <div className="lab-form-stack">
+          <MemberRegistrationProgress current={success ? 3 : 2} />
+
           {error && (
             <Alert tone="danger" title="Enrollment status could not be updated">
               {error.message}
@@ -312,20 +440,121 @@ export default function MemberEnrollmentDialog({
           )}
 
           {success ? (
-            <div className="lab-enrollment-success" role="status">
-              <span className="lab-enrollment-success__icon">
-                <CheckIcon className="h-6 w-6" />
-              </span>
-              <div>
-                <h3>Fingerprint enrollment complete</h3>
-                <p>
-                  {member?.name || "The member"} has been activated. The login and logout
-                  readers can now recognize this member.
-                </p>
+            <>
+              <div className="lab-enrollment-success" role="status">
+                <span className="lab-enrollment-success__icon">
+                  <CheckIcon className="h-6 w-6" />
+                </span>
+                <div>
+                  <h3>Fingerprint enrollment complete</h3>
+                  <p>
+                    {member?.name || "The member"} has been activated. The login and logout
+                    readers can now recognize this member.
+                  </p>
+                </div>
               </div>
-            </div>
+
+              {emailError && (
+                <Alert tone="warning" title="Email status could not be refreshed">
+                  {emailError.message}
+                </Alert>
+              )}
+
+              {registrationEmail?.status === "sent" ? (
+                <Alert tone="success" title="Confirmation email sent">
+                  The registration confirmation was delivered to {registrationEmail.recipient}.
+                </Alert>
+              ) : registrationEmail?.status === "failed" ? (
+                <Alert
+                  tone="warning"
+                  title="Member activated; email delivery failed"
+                  action={
+                    <AppButton
+                      variant="outline"
+                      size="sm"
+                      loading={emailBusy}
+                      onClick={handleRetryEmail}
+                    >
+                      Retry email
+                    </AppButton>
+                  }
+                >
+                  {registrationEmail.last_error ||
+                    "The confirmation email could not be delivered. The member account is active and can sign in normally."}
+                </Alert>
+              ) : registrationEmail ? (
+                <Alert tone="info" title="Confirmation email queued">
+                  Sending to {registrationEmail.recipient}. Delivery continues in the background;
+                  the member account is already active.
+                </Alert>
+              ) : (
+                <Alert
+                  tone="info"
+                  title="Confirmation email"
+                  action={
+                    <AppButton
+                      variant="outline"
+                      size="sm"
+                      loading={emailBusy}
+                      onClick={handleRetryEmail}
+                    >
+                      Queue email
+                    </AppButton>
+                  }
+                >
+                  The member is active. Queue a confirmation email when delivery is available.
+                </Alert>
+              )}
+            </>
           ) : (
             <>
+              {!isActive && (
+                <div className="lab-reader-picker">
+                  <Field
+                    label="Enrollment reader"
+                    htmlFor="enrollment-reader"
+                    error={readersError?.message}
+                    hint={
+                      readersInfo?.device?.name
+                        ? `Device: ${readersInfo.device.name}`
+                        : "Waiting for an active enrollment device."
+                    }
+                    required
+                  >
+                    <Select
+                      id="enrollment-reader"
+                      value={selectedReaderKey}
+                      onChange={(event) => setSelectedReaderKey(event.target.value)}
+                      disabled={readersBusy || readers.length === 0}
+                    >
+                      {readers.length === 0 && <option value="">No readers available</option>}
+                      {readers.map((reader) => (
+                        <option key={reader.key} value={reader.key} disabled={!reader.available}>
+                          {reader.label}
+                          {reader.available ? "" : " · unavailable"}
+                        </option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <AppButton
+                    variant="outline"
+                    size="sm"
+                    onClick={loadReaders}
+                    loading={readersBusy}
+                  >
+                    <RefreshIcon className="h-4 w-4" />
+                    Refresh readers
+                  </AppButton>
+                </div>
+              )}
+
+              {!isActive && availableReaders.length === 0 && !readersBusy && (
+                <Alert tone="warning" title="No enrollment reader is connected">
+                  Connect the login, logout, or dedicated reader and refresh the list before
+                  starting enrollment.
+                </Alert>
+              )}
+
               <div className="lab-enrollment-status">
                 <div className="lab-enrollment-status__icon">
                   {isActive ? (
@@ -374,7 +603,9 @@ export default function MemberEnrollmentDialog({
                 items={[
                   {
                     label: "Enrollment reader",
-                    value: session?.device?.name || "Any active enrollment reader",
+                    value: session?.reader_label
+                      ? `${session.reader_label}${session?.device?.name ? ` · ${session.device.name}` : ""}`
+                      : selectedReader?.label || "Select a reader",
                   },
                   {
                     label: "Attempts",

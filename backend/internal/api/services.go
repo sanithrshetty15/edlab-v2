@@ -40,6 +40,7 @@ func (s *Server) registerJobHandlers() {
 	s.Jobs.Register("mail.send", handler)
 	s.Jobs.Register("biometric.process_event", s.processBiometricEvent)
 	s.Jobs.Register("biometric.expire_enrollment_session", s.expireEnrollmentSessionJob)
+	s.Jobs.Register("member.registration_email", s.registrationConfirmationEmailJob)
 }
 
 func (s *Server) EmailConfigured() bool {

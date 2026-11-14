@@ -5108,6 +5108,80 @@ a.lab-activity__title:hover {
    Member fingerprint enrollment
    -------------------------------------------------------------------------- */
 
+.lab-registration-progress {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.lab-registration-progress__step {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  border: 1px solid var(--lab-line);
+  border-radius: var(--lab-radius-sm);
+  padding: 0.55rem 0.6rem;
+  color: var(--lab-faint);
+  font-size: 0.64rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.lab-registration-progress__step.is-current {
+  border-color: rgba(147, 196, 125, 0.42);
+  background: var(--lab-accent-soft);
+  color: var(--lab-text-soft);
+}
+
+.lab-registration-progress__step.is-done {
+  border-color: rgba(147, 196, 125, 0.2);
+  color: var(--lab-muted);
+}
+
+.lab-registration-progress__index {
+  display: grid;
+  width: 1.4rem;
+  height: 1.4rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--lab-line-strong);
+  border-radius: 999px;
+  font-size: 0.58rem;
+}
+
+.lab-registration-progress__step.is-current .lab-registration-progress__index {
+  border-color: var(--lab-accent);
+  background: var(--lab-accent);
+  color: #10150e;
+}
+
+.lab-registration-progress__step.is-done .lab-registration-progress__index {
+  border-color: rgba(147, 196, 125, 0.35);
+  background: var(--lab-accent-soft);
+  color: var(--lab-accent);
+}
+
+.lab-reader-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 0.6rem;
+}
+
+@media (max-width: 720px) {
+  .lab-registration-progress {
+    flex-direction: column;
+  }
+
+  .lab-reader-picker {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .lab-enrollment-status {
   display: flex;
   gap: 0.85rem;

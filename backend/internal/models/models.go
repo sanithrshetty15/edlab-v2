@@ -148,6 +148,19 @@ type MemberEnrollmentSession struct {
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
+type MemberRegistrationEmail struct {
+	ID        int64      `gorm:"primaryKey" json:"id"`
+	MemberID  int64      `gorm:"not null;uniqueIndex:index_member_registration_emails_on_member_id" json:"member_id"`
+	Recipient string     `gorm:"not null" json:"recipient"`
+	Status    string     `gorm:"not null;default:'pending';index" json:"status"`
+	Attempts  int        `gorm:"not null;default:0" json:"attempts"`
+	LastError *string    `json:"last_error,omitempty"`
+	QueuedAt  *time.Time `json:"queued_at,omitempty"`
+	SentAt    *time.Time `json:"sent_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+}
+
 // DeviceRegistration represents a fingerprint/biometric device registration
 type DeviceRegistration struct {
 	ID           int64      `gorm:"primaryKey" json:"id"`

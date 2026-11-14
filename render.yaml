@@ -34,6 +34,12 @@ services:
         sync: false
       - key: RESEND_API_KEY
         sync: false
+      - key: GMAIL_USERNAME
+        value: edwin.lab.aiet@gmail.com
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+      - key: MAILER_FROM
+        value: Edwins Lab <edwin.lab.aiet@gmail.com>
       - key: RATE_LIMIT_REQUESTS
         value: 100
       - key: RATE_LIMIT_PERIOD_SECONDS

@@ -51,20 +51,29 @@ type enrollmentTestReader struct {
 }
 
 type enrollmentTestReadersResponse struct {
-	Success           bool                    `json:"success"`
-	Readers           []enrollmentTestReader  `json:"readers"`
-	SelectedReaderKey *string                 `json:"selected_reader_key"`
+	Success           bool                   `json:"success"`
+	Readers           []enrollmentTestReader `json:"readers"`
+	SelectedReaderKey *string                `json:"selected_reader_key"`
 	Device            struct {
 		ID int64 `json:"id"`
 	} `json:"device"`
 }
 
 type enrollmentTestMember struct {
-	ID               int64  `json:"id"`
-	LoginID          string `json:"login_id"`
-	Email            string `json:"email"`
-	Status           string `json:"status"`
-	EnrollmentStatus string `json:"enrollment_status"`
+	ID               int64   `json:"id"`
+	LoginID          string  `json:"login_id"`
+	Email            string  `json:"email"`
+	USN              *string `json:"usn"`
+	RollNumber       *string `json:"roll_number"`
+	Status           string  `json:"status"`
+	EnrollmentStatus string  `json:"enrollment_status"`
+}
+
+type enrollmentTestEmail struct {
+	Recipient string `json:"recipient"`
+	Status    string `json:"status"`
+	Attempts  int    `json:"attempts"`
+	LastError string `json:"last_error"`
 }
 
 type enrollmentTestResponse struct {
@@ -73,6 +82,7 @@ type enrollmentTestResponse struct {
 	Action              string                 `json:"action"`
 	Member              enrollmentTestMember   `json:"member"`
 	Enrollment          *enrollmentTestSession `json:"enrollment"`
+	RegistrationEmail   *enrollmentTestEmail   `json:"registration_email"`
 	BiometricEnrollment struct {
 		ID              int64  `json:"id"`
 		MemberID        int64  `json:"member_id"`
@@ -194,6 +204,7 @@ func (e *enrollmentTestEnv) createPendingMember(prefix string) (int64, string, s
 		"password":              "password123",
 		"password_confirmation": "password123",
 		"academic_year":         2,
+		"usn":                   fmt.Sprintf("TST%d", value),
 		"branch":                "Computer Science",
 	}
 	recorder := e.request(http.MethodPost, "/api/v1/members-management", e.adminToken, "", body)
@@ -337,6 +348,9 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 		if response.Enrollment == nil || response.Enrollment.Status != enrollmentStatusFinalized {
 			t.Fatalf("unexpected finalized session: %+v", response.Enrollment)
 		}
+		if response.RegistrationEmail == nil || response.RegistrationEmail.Status != registrationEmailFailed {
+			t.Fatalf("unexpected registration email after finalization: %+v", response.RegistrationEmail)
+		}
 		if response.BiometricEnrollment.FingerprintSlot == nil || *response.BiometricEnrollment.FingerprintSlot != slot {
 			t.Fatalf("missing biometric slot in response: %s", recorder.Body.String())
 		}
@@ -377,6 +391,16 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 		env.expect(recorder, http.StatusOK)
 		if !strings.Contains(recorder.Body.String(), fmt.Sprintf(`"fingerprint_slot":%d`, slot)) {
 			t.Fatalf("enrollment list missing slot: %s", recorder.Body.String())
+		}
+
+		recorder = env.request(http.MethodGet, fmt.Sprintf("/api/v1/members-management/%d/registration-email", memberID), env.adminToken, "", nil)
+		env.expect(recorder, http.StatusOK)
+		var emailResponse struct {
+			RegistrationEmail *enrollmentTestEmail `json:"registration_email"`
+		}
+		env.decode(recorder, &emailResponse)
+		if emailResponse.RegistrationEmail == nil || emailResponse.RegistrationEmail.Status != registrationEmailFailed {
+			t.Fatalf("unexpected confirmation email status: %s", recorder.Body.String())
 		}
 	})
 
@@ -549,5 +573,60 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 		if claim := env.claim(); claim.Action != "none" {
 			t.Fatalf("cancel cleanup still pending: %+v", claim)
 		}
+	})
+
+	t.Run("simplified registration accepts the four required fields", func(t *testing.T) {
+		value := time.Now().UnixNano() % 1000000000
+		suffix := env.nextSuffix()
+		roll := fmt.Sprintf("R%d", value)
+		firstYearEmail := fmt.Sprintf("first-year-%s@example.com", suffix)
+		body := map[string]any{
+			"name":          "First Year Member",
+			"academic_year": 1,
+			"roll_number":   roll,
+			"email":         firstYearEmail,
+		}
+		recorder := env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", body)
+		env.expect(recorder, http.StatusCreated)
+		var response enrollmentTestResponse
+		env.decode(recorder, &response)
+		if response.Member.LoginID != roll {
+			t.Fatalf("generated login ID = %q, want roll %q", response.Member.LoginID, roll)
+		}
+		if response.Member.RollNumber == nil || *response.Member.RollNumber != roll || response.Member.USN != nil {
+			t.Fatalf("unexpected first-year identity: %s", recorder.Body.String())
+		}
+		if response.Member.Status != memberStatusPendingEnrollment || response.Enrollment == nil {
+			t.Fatalf("first-year member must await enrollment: %s", recorder.Body.String())
+		}
+
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", body)
+		env.expect(recorder, http.StatusUnprocessableEntity)
+
+		usn := fmt.Sprintf("TST%d", value+1)
+		secondYearEmail := fmt.Sprintf("second-year-%s@example.com", suffix)
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":          "Second Year Member",
+			"academic_year": 3,
+			"usn":           usn,
+			"email":         secondYearEmail,
+		})
+		env.expect(recorder, http.StatusCreated)
+		var secondResponse enrollmentTestResponse
+		env.decode(recorder, &secondResponse)
+		if secondResponse.Member.LoginID != usn {
+			t.Fatalf("generated login ID = %q, want USN %q", secondResponse.Member.LoginID, usn)
+		}
+		if secondResponse.Member.USN == nil || *secondResponse.Member.USN != usn {
+			t.Fatalf("unexpected second-year identity: %s", recorder.Body.String())
+		}
+
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":          "Invalid Email Member",
+			"academic_year": 2,
+			"usn":           fmt.Sprintf("TST%d", value+2),
+			"email":         "not-an-email",
+		})
+		env.expect(recorder, http.StatusUnprocessableEntity)
 	})
 }

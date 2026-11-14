@@ -102,7 +102,7 @@ export const exploreFooter = {
   eyebrow: "Keep in touch",
   statement: "Learn. Build. Innovate.",
   closing: "A space to explore. A place to create.",
-  email: "edwinsoslab@gmail.com",
+  email: "edwin.lab.aiet@gmail.com",
   nav: [
     { label: "The lab", href: "#lab" },
     { label: "Gallery", href: "#gallery" },

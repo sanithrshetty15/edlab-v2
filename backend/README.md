@@ -117,8 +117,8 @@ Example: `postgres://user:password@host:5432/edwinslab?sslmode=require`
 | Variable | Notes |
 |---|---|
 | `RESEND_API_KEY` | Resend provider |
-| `GMAIL_USERNAME` / `GMAIL_APP_PASSWORD` | Gmail SMTP alternative |
-| `MAILER_FROM` | From header; defaults from `GMAIL_USERNAME` or `noreply@edwinslab.in` |
+| `GMAIL_USERNAME` / `GMAIL_APP_PASSWORD` | Gmail SMTP sender; use `edwin.lab.aiet@gmail.com` and a Gmail App Password |
+| `MAILER_FROM` | From header; defaults from `GMAIL_USERNAME` or `Edwins Lab <edwin.lab.aiet@gmail.com>` |
 
 ### OTP and sessions
 
@@ -212,15 +212,22 @@ Security notes:
 
 ### Member fingerprint enrollment
 
-Creating a member through `POST /api/v1/members-management` now creates an
-inactive `pending_enrollment` member and a `pending_details` session; it does
-not activate the member. An administrator then starts fingerprint enrollment:
+Creating a member through `POST /api/v1/members-management` now requires a
+name, academic year, email, and either a roll number (first year) or USN
+(second year and above). It creates an inactive `pending_enrollment` member and
+a `pending_details` session; it does not activate the member. The login ID is
+derived from the roll number or USN, and a temporary password is generated when
+one is not supplied. An administrator then selects an available reader and
+starts fingerprint enrollment:
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/api/v1/members-management/:id/fingerprint-enrollment` | POST | Start or resume enrollment |
+| `/api/v1/members-management/:id/fingerprint-enrollment/readers` | GET | List available enrollment readers |
+| `/api/v1/members-management/:id/fingerprint-enrollment` | POST | Start or resume enrollment with `device_registration_id` and `reader_key` |
 | `/api/v1/members-management/:id/fingerprint-enrollment` | GET | Read the latest session |
 | `/api/v1/members-management/:id/fingerprint-enrollment` | DELETE | Cancel and delete the pending member |
+| `/api/v1/members-management/:id/registration-email` | GET | Read confirmation-email delivery status |
+| `/api/v1/members-management/:id/registration-email/retry` | POST | Retry a failed confirmation email |
 
 Device session routes use `X-Device-Token` and are polled by the ESP32:
 
@@ -247,6 +254,12 @@ device can clean up any stored template. When a slot is already owned by
 another member, finalization marks the session failed with
 `cleanup_required=false` so the device does not erase another member's
 template.
+
+After finalization commits, the backend queues a branded confirmation email to
+the member. Delivery status is tracked as `pending`, `queued`, `sending`,
+`sent`, or `failed`. A delivery failure does not roll back activation; the
+member remains active and an administrator can retry the email from the
+members screen.
 
 ### Rate limiting
 

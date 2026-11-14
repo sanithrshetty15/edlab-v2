@@ -54,5 +54,7 @@ func (s *Server) registerMemberManagementRoutes(api *gin.RouterGroup) {
 	members.GET("/:id/fingerprint-enrollment", s.memberFingerprintEnrollmentStatus)
 	members.GET("/:id/fingerprint-enrollment/readers", s.memberEnrollmentReaders)
 	members.DELETE("/:id/fingerprint-enrollment", s.cancelMemberFingerprintEnrollment)
+	members.GET("/:id/registration-email", s.memberRegistrationEmailStatus)
+	members.POST("/:id/registration-email/retry", s.retryMemberRegistrationEmail)
 	members.DELETE("/:id", s.deactivateMember)
 }

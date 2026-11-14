@@ -97,7 +97,7 @@ func LoadConfig() (Config, error) {
 		if username := strings.TrimSpace(os.Getenv("GMAIL_USERNAME")); username != "" {
 			cfg.MailerFrom = fmt.Sprintf("Edwins Lab <%s>", username)
 		} else {
-			cfg.MailerFrom = "Edwins Lab <noreply@edwinslab.in>"
+			cfg.MailerFrom = "Edwins Lab <edwin.lab.aiet@gmail.com>"
 		}
 	}
 	if cfg.OTPMaxAttempts < 1 {

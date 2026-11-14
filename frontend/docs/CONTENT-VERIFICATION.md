@@ -22,8 +22,8 @@ confirms them.
 | # | Section | Existing statement | Class | Evidence | Required action |
 |---|---|---|---|---|---|
 | 1 | Brand | `Edwins Lab` (`site.name`, wordmark, footer copyright) | B | Internal project name only; no public official source | Confirm exact official name and whether "Edwins OS Lab" is used |
-| 2 | Brand | `College Open Source Technology Lab` (tagline, eyebrow) | B | Internal positioning; the address `edwinsoslab@…` hints at "OS lab" | Confirm official tagline |
-| 3 | Brand | Email `edwinsoslab@gmail.com` | B | Appears only in this repository | Confirm the address is owned and may be published |
+| 2 | Brand | `College Open Source Technology Lab` (tagline, eyebrow) | B | Internal positioning; no public official source | Confirm official tagline |
+| 3 | Brand | Email `edwin.lab.aiet@gmail.com` | B | New official lab contact and mailer address | Confirm the address is owned and may be published |
 | 4 | Metadata | `<title>` "Edwins Lab — College Open Source Technology Lab" | B | Follows #1/#2 | Update if the official name differs |
 | 5 | Metadata | Meta description ("college open-source technology lab…") | B | Restates internal positioning; no factual claim | Confirm or supply the official description |
 | 6 | Metadata | Favicon `href="../../assets/images/edwins-lab-logo.png"` with `type="image/svg+xml"` | **C** | Request resolved to `text/html` (SPA fallback) — the icon never loaded; mismatched MIME type; `public/favicon.svg` was unused | **Fixed**: now `/favicon.svg` (correct type and asset) |
@@ -85,7 +85,7 @@ Please supply, only where it is true and safe to publish:
 
 1. Official name: "Edwins Lab", "Edwins OS Lab", or both (and which is primary)?
 2. Official institution, campus and location.
-3. Official contact email (is `edwinsoslab@gmail.com` correct and publishable?).
+3. Official contact email (is `edwin.lab.aiet@gmail.com` correct and publishable?).
 4. Verified GitHub organisation / repository URL.
 5. Verified social profiles (none are currently linked).
 6. Founding year and any dated milestones — or explicit confirmation that no

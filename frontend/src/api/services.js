@@ -58,8 +58,16 @@ export const membersManagementApi = {
     api.post(`${BASE}/members-management/${id}/fingerprint-enrollment`, payload),
   getFingerprintEnrollment: (id) =>
     api.get(`${BASE}/members-management/${id}/fingerprint-enrollment`),
+  getEnrollmentReaders: (id, params) =>
+    api.get(`${BASE}/members-management/${id}/fingerprint-enrollment/readers`, {
+      query: params,
+    }),
   cancelFingerprintEnrollment: (id) =>
     api.delete(`${BASE}/members-management/${id}/fingerprint-enrollment`),
+  getRegistrationEmail: (id) =>
+    api.get(`${BASE}/members-management/${id}/registration-email`),
+  retryRegistrationEmail: (id) =>
+    api.post(`${BASE}/members-management/${id}/registration-email/retry`, {}),
   deactivate: (id) => api.delete(`${BASE}/members-management/${id}`),
 };
 

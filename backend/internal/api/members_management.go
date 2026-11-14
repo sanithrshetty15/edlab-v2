@@ -1,6 +1,8 @@
 package api
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"net/http"
 	"regexp"
 	"strings"
@@ -84,6 +86,14 @@ func (s *Server) listMembers(c *gin.Context) {
 	})
 }
 
+func generateTemporaryMemberPassword() (string, error) {
+	buffer := make([]byte, 18)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(buffer), nil
+}
+
 func (s *Server) createMember(c *gin.Context) {
 	var request createMemberRequest
 	if !bindJSON(c, &request) {
@@ -97,39 +107,24 @@ func (s *Server) createMember(c *gin.Context) {
 	roll := strings.TrimSpace(request.RollNumber)
 	branch := strings.TrimSpace(request.Branch)
 	section := strings.TrimSpace(request.Section)
-	normalized := phone.Normalize(request.Phone)
+	normalized := ""
+	if strings.TrimSpace(request.Phone) != "" {
+		normalized = phone.Normalize(request.Phone)
+	}
 	password := request.Password
+	academicYear := request.AcademicYear
 
 	validationErrors := []string{}
 	if name == "" {
 		validationErrors = append(validationErrors, "Name is required")
 	}
-	if loginID == "" {
-		validationErrors = append(validationErrors, "Login ID is required")
-	} else if !loginIDPattern.MatchString(loginID) {
-		validationErrors = append(validationErrors, "Login ID can only contain letters, numbers, dots, and hyphens")
+	if academicYear < 1 || academicYear > 8 {
+		validationErrors = append(validationErrors, "Academic year must be between 1 and 8")
 	}
 	if email == "" {
 		validationErrors = append(validationErrors, "Email is required")
 	} else if !emailPattern.MatchString(email) {
 		validationErrors = append(validationErrors, "Please provide a valid email address")
-	}
-	if strings.TrimSpace(request.Phone) == "" {
-		validationErrors = append(validationErrors, "Phone number is required")
-	} else if !phone.IsValid(normalized) || !memberPhoneExpr.MatchString(normalized) {
-		validationErrors = append(validationErrors, "Please provide a valid phone number")
-	}
-	if request.AcademicYear < 1 || request.AcademicYear > 8 {
-		validationErrors = append(validationErrors, "Academic year must be between 1 and 8")
-	}
-	if branch == "" {
-		validationErrors = append(validationErrors, "Branch is required")
-	}
-	if len(password) < 8 {
-		validationErrors = append(validationErrors, "Password must be at least 8 characters")
-	}
-	if request.PasswordConfirmation != "" && request.PasswordConfirmation != password {
-		validationErrors = append(validationErrors, "Password confirmation does not match")
 	}
 	if usn != "" && !usnPattern.MatchString(usn) {
 		validationErrors = append(validationErrors, "USN must be 6-15 letters and digits")
@@ -137,9 +132,48 @@ func (s *Server) createMember(c *gin.Context) {
 	if roll != "" && !rollPattern.MatchString(roll) {
 		validationErrors = append(validationErrors, "Roll number contains invalid characters")
 	}
+	if academicYear == 1 && roll == "" {
+		validationErrors = append(validationErrors, "Roll number is required for first-year members")
+	}
+	if academicYear > 1 && usn == "" {
+		validationErrors = append(validationErrors, "USN is required for second-year and above members")
+	}
+	if loginID == "" {
+		if academicYear == 1 {
+			loginID = roll
+		} else {
+			loginID = usn
+		}
+	}
+	if loginID == "" {
+		validationErrors = append(validationErrors, "Login ID is required")
+	} else if !loginIDPattern.MatchString(loginID) {
+		validationErrors = append(validationErrors, "Login ID can only contain letters, numbers, dots, and hyphens")
+	}
+	if normalized != "" && (!phone.IsValid(normalized) || !memberPhoneExpr.MatchString(normalized)) {
+		validationErrors = append(validationErrors, "Please provide a valid phone number")
+	}
+	if password != "" && len(password) < 8 {
+		validationErrors = append(validationErrors, "Password must be at least 8 characters")
+	}
+	if request.PasswordConfirmation != "" && request.PasswordConfirmation != password {
+		validationErrors = append(validationErrors, "Password confirmation does not match")
+	}
 	if len(validationErrors) > 0 {
 		failValidation(c, strings.Join(validationErrors, ", "), validationErrors)
 		return
+	}
+	if branch == "" {
+		branch = "Not specified"
+	}
+	if password == "" {
+		generatedPassword, err := generateTemporaryMemberPassword()
+		if err != nil {
+			s.Log.Error("temporary member password generation failed", "error", err)
+			fail(c, http.StatusInternalServerError, "Unable to create member")
+			return
+		}
+		password = generatedPassword
 	}
 
 	ctx := c.Request.Context()
@@ -180,13 +214,15 @@ func (s *Server) createMember(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "An account with this email already exists")
 		return
 	}
-	if err := s.DB.WithContext(ctx).Model(&models.User{}).Where("phone = ?", normalized).Count(&count).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "Unable to create member")
-		return
-	}
-	if count > 0 {
-		fail(c, http.StatusUnprocessableEntity, "An account with this phone number already exists")
-		return
+	if normalized != "" {
+		if err := s.DB.WithContext(ctx).Model(&models.User{}).Where("phone = ?", normalized).Count(&count).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "Unable to create member")
+			return
+		}
+		if count > 0 {
+			fail(c, http.StatusUnprocessableEntity, "An account with this phone number already exists")
+			return
+		}
 	}
 
 	hash, err := s.Security.GenerateHash(password)
@@ -208,10 +244,15 @@ func (s *Server) createMember(c *gin.Context) {
 
 	var member models.Member
 	var enrollmentSession models.MemberEnrollmentSession
+	var userPhone *string
+	if normalized != "" {
+		userPhone = &normalized
+	}
+
 	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		user := models.User{
 			Email:          email,
-			Phone:          &normalized,
+			Phone:          userPhone,
 			PasswordDigest: &hash,
 			Role:           "member",
 			Active:         false,
@@ -230,7 +271,7 @@ func (s *Server) createMember(c *gin.Context) {
 			UserID:             user.ID,
 			Name:               name,
 			LoginID:            loginID,
-			AcademicYear:       request.AcademicYear,
+			AcademicYear:       academicYear,
 			Branch:             branch,
 			Email:              email,
 			Phone:              normalized,
@@ -260,6 +301,10 @@ func (s *Server) createMember(c *gin.Context) {
 	})
 	if err != nil {
 		s.Log.Error("member creation failed", "error", err)
+		if isDuplicateKeyError(err) {
+			fail(c, http.StatusUnprocessableEntity, "A member with the same login ID, email, USN, roll number, or phone already exists")
+			return
+		}
 		fail(c, http.StatusUnprocessableEntity, "Unable to create member")
 		return
 	}
@@ -314,10 +359,16 @@ func (s *Server) showMember(c *gin.Context) {
 		member.EnrollmentStatus = enrollmentStatusPendingDetails
 	}
 
+	var registrationEmail any
+	if item, emailErr := s.loadRegistrationEmail(c.Request.Context(), member.ID); emailErr == nil {
+		registrationEmail = serializeRegistrationEmail(item)
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"success":    true,
-		"member":     serializeManagedMemberFull(&member, &user),
-		"enrollment": enrollment,
+		"success":            true,
+		"member":             serializeManagedMemberFull(&member, &user),
+		"enrollment":         enrollment,
+		"registration_email": registrationEmail,
 	})
 }
 

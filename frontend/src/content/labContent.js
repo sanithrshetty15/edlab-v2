@@ -1,7 +1,7 @@
 export const site = {
   name: "Edwins Lab",
   tagline: "College Open Source Technology Lab",
-  email: "edwinsoslab@gmail.com",
+  email: "edwin.lab.aiet@gmail.com",
   description:
     "Edwins Lab is a college open-source technology lab: a welcoming point for people who learn by exploring Linux, sharing what they discover and building in the open.",
 };
@@ -121,7 +121,7 @@ export const downloads = {
   },
   notifyLabel: "Get release updates",
   notifyHref:
-    "mailto:edwinsoslab@gmail.com?subject=Edwins%20Lab%20app%20release%20updates",
+    "mailto:edwin.lab.aiet@gmail.com?subject=Edwins%20Lab%20app%20release%20updates",
 };
 
 /*

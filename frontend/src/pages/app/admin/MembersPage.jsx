@@ -2,6 +2,7 @@ import { useState } from "react";
 import { membersManagementApi } from "../../../api/services";
 import { useApiResource } from "../../../hooks/useApiResource";
 import MemberEnrollmentDialog from "./MemberEnrollmentDialog";
+import MemberRegistrationProgress from "./MemberRegistrationProgress";
 import { ConfirmDialog, Modal } from "../../../components/app/Modal";
 import {
   Alert,
@@ -16,7 +17,6 @@ import {
   PageHeader,
   Pagination,
   Panel,
-  PasswordField,
   Select,
   StatusBadge,
   TextInput,
@@ -59,6 +59,7 @@ function EditMemberDialog({ member, onClose, onSaved }) {
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
+  const isFirstYear = String(academicYear) === "1";
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -66,7 +67,12 @@ function EditMemberDialog({ member, onClose, onSaved }) {
 
     const nextErrors = {};
     if (!name.trim()) nextErrors.name = "Name is required.";
-    if (!usn.trim()) nextErrors.usn = "USN is required.";
+    if (isFirstYear && !rollNumber.trim()) {
+      nextErrors.rollNumber = "Roll number is required for first-year members.";
+    }
+    if (!isFirstYear && !usn.trim()) {
+      nextErrors.usn = "USN is required for second-year and above members.";
+    }
     if (phone && !/^\+?[1-9]\d{7,14}$/.test(phone.trim())) {
       nextErrors.phone = "Use an international format such as +919876543210.";
     }
@@ -143,7 +149,7 @@ function EditMemberDialog({ member, onClose, onSaved }) {
               disabled={saving}
             />
           </Field>
-          <Field label="USN" htmlFor="member-usn" error={errors.usn} required>
+          <Field label="USN" htmlFor="member-usn" error={errors.usn} required={!isFirstYear}>
             <TextInput
               id="member-usn"
               value={usn}
@@ -151,7 +157,12 @@ function EditMemberDialog({ member, onClose, onSaved }) {
               disabled={saving}
             />
           </Field>
-          <Field label="Roll number" htmlFor="member-roll">
+          <Field
+            label="Roll number"
+            htmlFor="member-roll"
+            error={errors.rollNumber}
+            required={isFirstYear}
+          >
             <TextInput
               id="member-roll"
               value={rollNumber}
@@ -213,54 +224,47 @@ function EditMemberDialog({ member, onClose, onSaved }) {
 function CreateMemberDialog({ onClose, onCreated }) {
   const [values, setValues] = useState({
     name: "",
-    login_id: "",
-    email: "",
-    phone: "",
-    usn: "",
-    roll_number: "",
     academic_year: "1",
-    branch: "",
-    section: "",
-    password: "",
-    password_confirmation: "",
+    identifier: "",
+    email: "",
   });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
 
+  const isFirstYear = String(values.academic_year) === "1";
+  const identifierLabel = isFirstYear ? "Roll number" : "USN";
+
   const update = (key) => (event) => {
     setValues((current) => ({ ...current, [key]: event.target.value }));
+  };
+
+  const updateYear = (event) => {
+    setValues((current) => ({
+      ...current,
+      academic_year: event.target.value,
+      identifier: "",
+    }));
+    setErrors((current) => ({ ...current, identifier: undefined }));
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (saving) return;
 
+    const identifier = values.identifier.trim();
     const nextErrors = {};
     if (!values.name.trim()) nextErrors.name = "Name is required.";
-    if (!values.login_id.trim()) nextErrors.login_id = "Login ID is required.";
-    else if (!/^[\w.-]+$/.test(values.login_id.trim())) {
-      nextErrors.login_id = "Use letters, numbers, dots, or hyphens only.";
+    if (!identifier) {
+      nextErrors.identifier = `${identifierLabel} is required.`;
+    } else if (isFirstYear && !/^[\w-]+$/.test(identifier)) {
+      nextErrors.identifier = "Roll number contains invalid characters.";
+    } else if (!isFirstYear && !/^[A-Z0-9]{6,15}$/i.test(identifier)) {
+      nextErrors.identifier = "USN must be 6-15 letters and digits.";
     }
-    if (!values.email.trim()) nextErrors.email = "Email is required.";
+    if (!values.email.trim()) nextErrors.email = "Gmail address is required.";
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email.trim())) {
-      nextErrors.email = "Enter a valid email address.";
-    }
-    if (!values.phone.trim()) nextErrors.phone = "Phone is required.";
-    else if (!/^\+?[1-9]\d{7,14}$/.test(values.phone.trim())) {
-      nextErrors.phone = "Use an international format such as +919876543210.";
-    }
-    if (!values.usn.trim()) nextErrors.usn = "USN is required.";
-    else if (!/^[A-Z0-9]{6,15}$/i.test(values.usn.trim())) {
-      nextErrors.usn = "USN must be 6-15 letters and digits.";
-    }
-    if (!values.branch.trim()) nextErrors.branch = "Branch is required.";
-    if (!values.password) nextErrors.password = "Temporary password is required.";
-    else if (values.password.length < 8) {
-      nextErrors.password = "Use at least 8 characters.";
-    }
-    if (values.password !== values.password_confirmation) {
-      nextErrors.password_confirmation = "Passwords do not match.";
+      nextErrors.email = "Enter a valid Gmail address.";
     }
 
     setErrors(nextErrors);
@@ -271,16 +275,10 @@ function CreateMemberDialog({ onClose, onCreated }) {
     try {
       const result = await membersManagementApi.create({
         name: values.name.trim(),
-        login_id: values.login_id.trim(),
+        academic_year: Number(values.academic_year),
+        usn: isFirstYear ? "" : identifier.toUpperCase(),
+        roll_number: isFirstYear ? identifier : "",
         email: values.email.trim(),
-        phone: values.phone.trim(),
-        usn: values.usn.trim().toUpperCase(),
-        roll_number: values.roll_number.trim(),
-        academic_year: values.academic_year,
-        branch: values.branch.trim(),
-        section: values.section.trim(),
-        password: values.password,
-        password_confirmation: values.password_confirmation,
       });
       onCreated(result);
     } catch (error) {
@@ -294,8 +292,8 @@ function CreateMemberDialog({ onClose, onCreated }) {
     <Modal
       open
       onClose={onClose}
-      title="Add member · Step 1 of 2"
-      description="Create the official member record and sign-in credentials. The account stays inactive until fingerprint enrollment is complete."
+      title="Add member · Basic details"
+      description="Start with the four details needed to create a member record."
       size="lg"
       footer={
         <>
@@ -303,17 +301,25 @@ function CreateMemberDialog({ onClose, onCreated }) {
             Cancel
           </AppButton>
           <AppButton form="create-member-form" type="submit" variant="primary" loading={saving}>
-            Save details & continue
+            Continue to fingerprint
           </AppButton>
         </>
       }
     >
       <form id="create-member-form" className="lab-form-stack" onSubmit={handleSubmit} noValidate>
+        <MemberRegistrationProgress current={1} />
+
         {formError && (
           <Alert tone="danger" title="Member could not be created">
             {formError.message}
           </Alert>
         )}
+
+        <Alert tone="info" title="What happens next">
+          A login ID is created from the {identifierLabel.toLowerCase()}. The account stays
+          inactive until fingerprint enrollment is complete, and the member can set a password
+          using Forgot password after activation.
+        </Alert>
 
         <div className="lab-form-grid">
           <Field label="Full name" htmlFor="new-member-name" error={errors.name} required>
@@ -325,61 +331,11 @@ function CreateMemberDialog({ onClose, onCreated }) {
               disabled={saving}
             />
           </Field>
-          <Field label="Login ID" htmlFor="new-member-login" error={errors.login_id} required>
-            <TextInput
-              id="new-member-login"
-              value={values.login_id}
-              onChange={update("login_id")}
-              autoComplete="off"
-              spellCheck="false"
-              disabled={saving}
-            />
-          </Field>
-          <Field label="Email" htmlFor="new-member-email" error={errors.email} required>
-            <TextInput
-              id="new-member-email"
-              type="email"
-              value={values.email}
-              onChange={update("email")}
-              autoComplete="email"
-              disabled={saving}
-            />
-          </Field>
-          <Field label="Phone" htmlFor="new-member-phone" error={errors.phone} required>
-            <TextInput
-              id="new-member-phone"
-              type="tel"
-              value={values.phone}
-              onChange={update("phone")}
-              placeholder="+919876543210"
-              autoComplete="tel"
-              disabled={saving}
-            />
-          </Field>
-          <Field label="USN" htmlFor="new-member-usn" error={errors.usn} required>
-            <TextInput
-              id="new-member-usn"
-              value={values.usn}
-              onChange={update("usn")}
-              placeholder="4AL25CS000"
-              autoCapitalize="characters"
-              spellCheck="false"
-              disabled={saving}
-            />
-          </Field>
-          <Field label="Roll number" htmlFor="new-member-roll">
-            <TextInput
-              id="new-member-roll"
-              value={values.roll_number}
-              onChange={update("roll_number")}
-              disabled={saving}
-            />
-          </Field>
           <Field label="Academic year" htmlFor="new-member-year" required>
             <Select
               id="new-member-year"
               value={values.academic_year}
-              onChange={update("academic_year")}
+              onChange={updateYear}
               disabled={saving}
             >
               {[1, 2, 3, 4, 5, 6, 7, 8].map((year) => (
@@ -387,42 +343,44 @@ function CreateMemberDialog({ onClose, onCreated }) {
               ))}
             </Select>
           </Field>
-          <Field label="Branch" htmlFor="new-member-branch" error={errors.branch} required>
+          <Field
+            label={identifierLabel}
+            htmlFor="new-member-identifier"
+            error={errors.identifier}
+            hint={
+              isFirstYear
+                ? "First-year members use their roll number."
+                : "Second-year and above members use their USN."
+            }
+            required
+          >
             <TextInput
-              id="new-member-branch"
-              value={values.branch}
-              onChange={update("branch")}
+              id="new-member-identifier"
+              value={values.identifier}
+              onChange={update("identifier")}
+              placeholder={isFirstYear ? "Roll number" : "4AL25CS000"}
+              autoCapitalize={isFirstYear ? "none" : "characters"}
+              spellCheck="false"
               disabled={saving}
             />
           </Field>
-          <Field label="Section" htmlFor="new-member-section">
+          <Field
+            label="Gmail address"
+            htmlFor="new-member-email"
+            error={errors.email}
+            hint="Confirmation and account recovery emails are sent here."
+            required
+          >
             <TextInput
-              id="new-member-section"
-              value={values.section}
-              onChange={update("section")}
+              id="new-member-email"
+              type="email"
+              value={values.email}
+              onChange={update("email")}
+              autoComplete="email"
+              placeholder="member@gmail.com"
               disabled={saving}
             />
           </Field>
-          <PasswordField
-            id="new-member-password"
-            label="Temporary password"
-            value={values.password}
-            onChange={update("password")}
-            autoComplete="new-password"
-            error={errors.password}
-            required
-            disabled={saving}
-          />
-          <PasswordField
-            id="new-member-password-confirmation"
-            label="Confirm password"
-            value={values.password_confirmation}
-            onChange={update("password_confirmation")}
-            autoComplete="new-password"
-            error={errors.password_confirmation}
-            required
-            disabled={saving}
-          />
         </div>
       </form>
     </Modal>
@@ -821,7 +779,10 @@ export default function MembersPage() {
                       </td>
                       <td>
                         <div className="lab-member-academic">
-                          <span>{member.usn || "No USN"}</span>
+                          <span>
+                            {member.usn ||
+                              (member.roll_number ? `Roll ${member.roll_number}` : "No identifier")}
+                          </span>
                           <small>
                             {member.academic_year ? `Year ${member.academic_year}` : "Year —"}
                             {member.branch ? ` · ${member.branch}` : ""}

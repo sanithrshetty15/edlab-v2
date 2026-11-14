@@ -68,7 +68,7 @@ original artwork.
 - Download actions have no fake links. Android APK and PWA URLs are `null`
   until builds are approved, and the UI says "in preparation".
 - The contact email is the real lab address found in the backend:
-  `edwinsoslab@gmail.com`.
+  `edwin.lab.aiet@gmail.com`.
 
 ## 3D Tux
 

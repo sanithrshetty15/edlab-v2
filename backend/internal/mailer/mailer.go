@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"mime"
 	"net/http"
 	"net/smtp"
 	"os"
@@ -13,7 +14,19 @@ import (
 	"time"
 )
 
-const resendEndpoint = "https://api.resend.com/emails"
+const (
+	resendEndpoint                  = "https://api.resend.com/emails"
+	labEmail                        = "edwin.lab.aiet@gmail.com"
+	RegistrationConfirmationSubject = "Welcome to Edwins Lab – Registration Successful!"
+)
+
+type RegistrationConfirmationData struct {
+	Name            string
+	LoginID         string
+	IdentifierLabel string
+	Identifier      string
+	AcademicYear    int
+}
 
 // Mailer handles email sending operations.
 type Mailer struct {
@@ -34,7 +47,7 @@ func New() *Mailer {
 		if username := strings.TrimSpace(os.Getenv("GMAIL_USERNAME")); username != "" {
 			from = fmt.Sprintf("Edwins Lab <%s>", username)
 		} else {
-			from = "Edwins Lab <noreply@edwinslab.in>"
+			from = "Edwins Lab <" + labEmail + ">"
 		}
 	}
 	return &Mailer{
@@ -127,7 +140,7 @@ func (m *Mailer) sendViaGmail(to, subject, body string) error {
 	var message bytes.Buffer
 	message.WriteString("From: " + m.From + "\r\n")
 	message.WriteString("To: " + to + "\r\n")
-	message.WriteString("Subject: " + subject + "\r\n")
+	message.WriteString("Subject: " + mime.QEncoding.Encode("utf-8", subject) + "\r\n")
 	message.WriteString("Date: " + time.Now().Format(time.RFC1123Z) + "\r\n")
 	message.WriteString("MIME-Version: 1.0\r\n")
 	message.WriteString("Content-Type: text/html; charset=UTF-8\r\n")
@@ -193,6 +206,84 @@ func (m *Mailer) NotificationEmail(title, message string) string {
 </td></tr></table>
 </td></tr></table>
 </body></html>`, html.EscapeString(title), html.EscapeString(message))
+}
+
+func (m *Mailer) RegistrationConfirmationEmail(data RegistrationConfirmationData) string {
+	name := strings.TrimSpace(data.Name)
+	if name == "" {
+		name = "there"
+	}
+	loginURL := ""
+	if base := strings.TrimSpace(m.FrontendURL); base != "" {
+		loginURL = strings.TrimRight(base, "/") + "/login"
+	}
+
+	identifierRow := ""
+	if strings.TrimSpace(data.IdentifierLabel) != "" && strings.TrimSpace(data.Identifier) != "" {
+		identifierRow = fmt.Sprintf(
+			`<tr><td style="padding:10px 0;border-bottom:1px solid #e7e9e2;color:#62685f;font-size:14px;">%s</td><td align="right" style="padding:10px 0;border-bottom:1px solid #e7e9e2;color:#1c1c1c;font-size:14px;font-weight:700;">%s</td></tr>`,
+			html.EscapeString(data.IdentifierLabel),
+			html.EscapeString(data.Identifier),
+		)
+	}
+	loginRow := ""
+	if strings.TrimSpace(data.LoginID) != "" {
+		loginRow = fmt.Sprintf(
+			`<tr><td style="padding:10px 0;border-bottom:1px solid #e7e9e2;color:#62685f;font-size:14px;">Login ID</td><td align="right" style="padding:10px 0;border-bottom:1px solid #e7e9e2;color:#1c1c1c;font-size:14px;font-weight:700;">%s</td></tr>`,
+			html.EscapeString(data.LoginID),
+		)
+	}
+	yearRow := ""
+	if data.AcademicYear > 0 {
+		yearRow = fmt.Sprintf(
+			`<tr><td style="padding:10px 0;border-bottom:1px solid #e7e9e2;color:#62685f;font-size:14px;">Year</td><td align="right" style="padding:10px 0;border-bottom:1px solid #e7e9e2;color:#1c1c1c;font-size:14px;font-weight:700;">Year %d</td></tr>`,
+			data.AcademicYear,
+		)
+	}
+	button := ""
+	if loginURL != "" {
+		button = fmt.Sprintf(
+			`<table role="presentation" cellpadding="0" cellspacing="0" style="margin:28px 0 0;"><tr><td style="border-radius:8px;background:#1c1c1c;"><a href="%s" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;font-size:14px;font-weight:700;">Sign in to Edwins Lab</a></td></tr></table>`,
+			html.EscapeString(loginURL),
+		)
+	}
+
+	return fmt.Sprintf(`<!DOCTYPE html>
+<html><body style="margin:0;background:#f4f5f0;font-family:Arial,Helvetica,sans-serif;color:#1c1c1c;">
+<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background:#f4f5f0;padding:36px 16px;">
+<tr><td align="center">
+<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e7e9e2;border-radius:14px;overflow:hidden;">
+<tr><td style="background:#1c1c1c;padding:26px 32px;">
+<p style="margin:0;color:#93c47d;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Edwins Lab</p>
+<h1 style="margin:8px 0 0;color:#ffffff;font-size:24px;line-height:1.3;">Registration successful</h1>
+</td></tr>
+<tr><td style="padding:32px;">
+<p style="margin:0;font-size:16px;line-height:1.65;">Hello %s,</p>
+<p style="margin:12px 0 0;font-size:15px;line-height:1.7;color:#3f453d;">Your Edwins Lab membership is active. Your fingerprint enrollment is complete, and your member account is ready to use.</p>
+<table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="margin:24px 0 0;border-top:1px solid #e7e9e2;">
+%s
+%s
+%s
+</table>
+<p style="margin:22px 0 0;font-size:14px;line-height:1.7;color:#3f453d;">Sign in with your login ID. If you have not set a password yet, choose <strong>Forgot password</strong> on the sign-in screen and follow the email instructions.</p>
+%s
+<p style="margin:28px 0 0;font-size:12px;line-height:1.7;color:#71766d;">Need help? Contact the lab team at <a href="mailto:%s" style="color:#3f453d;">%s</a>.</p>
+</td></tr>
+<tr><td style="background:#f8f9f5;padding:18px 32px;border-top:1px solid #e7e9e2;">
+<p style="margin:0;font-size:11px;line-height:1.6;color:#81877d;">Edwins Lab &middot; Innovation through practice</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`,
+		html.EscapeString(name),
+		identifierRow,
+		loginRow,
+		yearRow,
+		button,
+		labEmail,
+		labEmail,
+	)
 }
 
 func envOr(key, fallback string) string {

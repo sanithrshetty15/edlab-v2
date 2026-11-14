@@ -512,6 +512,11 @@ func (s *Server) memberFingerprintEnrollmentStatus(c *gin.Context) {
 		return
 	}
 
+	var registrationEmail any
+	if item, emailErr := s.loadRegistrationEmail(ctx, member.ID); emailErr == nil {
+		registrationEmail = serializeRegistrationEmail(item)
+	}
+
 	session, err := s.latestEnrollmentSession(ctx, member.ID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -519,9 +524,10 @@ func (s *Server) memberFingerprintEnrollmentStatus(c *gin.Context) {
 				member.EnrollmentStatus = enrollmentStatusPendingDetails
 			}
 			c.JSON(http.StatusOK, gin.H{
-				"success":    true,
-				"member":     serializeManagedMember(&member),
-				"enrollment": nil,
+				"success":            true,
+				"member":             serializeManagedMember(&member),
+				"enrollment":         nil,
+				"registration_email": registrationEmail,
 			})
 			return
 		}
@@ -540,9 +546,10 @@ func (s *Server) memberFingerprintEnrollmentStatus(c *gin.Context) {
 		member.EnrollmentStatus = session.Status
 	}
 	c.JSON(http.StatusOK, gin.H{
-		"success":    true,
-		"member":     serializeManagedMember(&member),
-		"enrollment": serializeEnrollmentSession(session, &member, device),
+		"success":            true,
+		"member":             serializeManagedMember(&member),
+		"enrollment":         serializeEnrollmentSession(session, &member, device),
+		"registration_email": registrationEmail,
 	})
 }
 
@@ -1196,6 +1203,9 @@ func (s *Server) respondEnrollmentComplete(c *gin.Context, session *models.Membe
 		} else {
 			payload["member"] = serializeManagedMember(member)
 		}
+		payload["registration_email"] = serializeRegistrationEmail(
+			s.queueRegistrationConfirmation(c.Request.Context(), member, false),
+		)
 	}
 	if enrollment != nil && enrollment.ID > 0 {
 		payload["biometric_enrollment"] = gin.H{
