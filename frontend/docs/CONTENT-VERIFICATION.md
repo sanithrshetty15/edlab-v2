@@ -87,7 +87,7 @@ Please supply, only where it is true and safe to publish:
 2. Official institution, campus and location.
 3. Official contact email (is `edwin.lab.aiet@gmail.com` correct and publishable?).
 4. Verified GitHub organisation / repository URL.
-5. Verified social profiles (none are currently linked).
+5. Verified social profiles — LinkedIn, Instagram and X links are now published in the footer.
 6. Founding year and any dated milestones — or explicit confirmation that no
    history should be shown.
 7. Coordinator / faculty advisor names and roles.

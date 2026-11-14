@@ -141,7 +141,37 @@ export const coordinators = {
   items: [], // NEEDS_USER_CONFIRMATION: { name, role, affiliation }
 };
 
-export const socialLinks = []; // NEEDS_USER_CONFIRMATION: { label, href }
+export const socialLinks = [
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    href: "https://www.linkedin.com/company/edwinslab/",
+    brandColor: "#0A66C2",
+    external: true,
+  },
+  {
+    id: "instagram",
+    label: "Instagram",
+    href: "https://www.instagram.com/edwinslab.ig?igsh=MWlnaGZxZ2l0OWo0cg==",
+    brandColor: "#E4405F",
+    external: true,
+  },
+  {
+    id: "x",
+    label: "X (Twitter)",
+    href: "https://x.com/edwinslabs",
+    brandColor: "#000000",
+    brandColorOnDark: "#FFFFFF",
+    external: true,
+  },
+  {
+    id: "email",
+    label: "Email",
+    href: `mailto:${site.email}`,
+    brandColor: "#EA4335",
+    external: false,
+  },
+];
 
 export const contact = {
   email: site.email,

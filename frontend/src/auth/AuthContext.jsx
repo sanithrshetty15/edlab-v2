@@ -149,23 +149,18 @@ export function AuthProvider({ children }) {
 
   const loginAdmin = useCallback(
     async (credentials) => {
-      // Step 1: Request OTP to be sent to administrator email
       const data = await authApi.adminLogin(credentials);
       if (data?.purpose !== "admin_login") {
         throw new Error("Failed to initiate admin OTP login");
       }
 
-      // The frontend should now prompt the user for the OTP code
-      // and call verifyAdminOTP on the backend to complete the login
-      // For now, we store the email and purpose to complete verification later
       const { email } = credentials;
-      // Store the pending OTP verification state
       setState((current) =>
         current.status === "authenticated"
           ? current
           : {
               ...initialState,
-              status: "unauthenticated",
+              status: "pending_admin_otp",
               pendingAdminOtp: { email, purpose: data.purpose },
               sessionError: null,
               expired: false,
@@ -173,7 +168,27 @@ export function AuthProvider({ children }) {
       );
       return { pendingOtp: true, email };
     },
-    [completeLogin],
+    [],
+  );
+
+  const verifyAndCompleteAdminLogin = useCallback(
+    async (otpCode) => {
+      const code = String(otpCode ?? "").trim();
+      if (!code) throw new Error("Enter the verification code.");
+
+      const data = await authApi.verifyAdminOTP({ otpCode: code });
+      const fallbackUser = data?.admin
+        ? {
+            id: data.admin.id,
+            email: data.admin.email,
+            role: "admin",
+            admin: data.admin,
+          }
+        : { role: "admin", email: state.pendingAdminOtp?.email || "" };
+
+      return completeLogin(data, fallbackUser);
+    },
+    [completeLogin, state.pendingAdminOtp?.email],
   );
 
   const logout = useCallback(async () => {
@@ -211,11 +226,20 @@ export function AuthProvider({ children }) {
       isMember: state.user?.role === "member",
       loginMember,
       loginAdmin,
+      verifyAndCompleteAdminLogin,
       logout,
       changePassword,
       refreshUser,
     };
-  }, [state, loginMember, loginAdmin, logout, changePassword, refreshUser]);
+  }, [
+    state,
+    loginMember,
+    loginAdmin,
+    verifyAndCompleteAdminLogin,
+    logout,
+    changePassword,
+    refreshUser,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

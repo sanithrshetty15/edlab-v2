@@ -1165,6 +1165,76 @@
   transform: scaleX(1);
 }
 
+.footer-social {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0;
+  list-style: none;
+}
+
+.footer-social__link {
+  --footer-social-brand: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+  background-color: rgba(255, 255, 255, 0.02);
+  color: rgba(255, 255, 255, 0.68);
+  transition:
+    color 240ms ease,
+    border-color 240ms ease,
+    background-color 240ms ease,
+    box-shadow 240ms ease,
+    transform 240ms ease;
+}
+
+.footer-social__link svg {
+  transition: transform 240ms ease;
+}
+
+.footer-social__link:hover {
+  border-color: var(--footer-social-brand);
+  background-color: color-mix(in srgb, var(--footer-social-brand) 13%, transparent);
+  box-shadow: 0 0 18px -6px var(--footer-social-brand);
+  color: var(--footer-social-brand);
+  transform: translateY(-2px) scale(1.04);
+}
+
+.footer-social__link:hover svg {
+  transform: scale(1.06);
+}
+
+.footer-social__link--instagram:hover {
+  background-image: linear-gradient(
+    135deg,
+    rgba(131, 58, 180, 0.2),
+    rgba(225, 48, 108, 0.14),
+    rgba(247, 119, 55, 0.1)
+  );
+}
+
+.footer-social__link:focus-visible {
+  outline-color: var(--footer-social-brand);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .footer-social__link,
+  .footer-social__link svg {
+    transition: none;
+  }
+
+  .footer-social__link:hover,
+  .footer-social__link:hover svg {
+    transform: none;
+  }
+}
+
 @keyframes scrollDot {
   0% {
     transform: translateY(0);

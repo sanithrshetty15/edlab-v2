@@ -368,6 +368,18 @@ export default function LoginPage({ sessionError, expired = false }) {
                     />
                   </div>
                 </Field>
+
+                <PasswordField
+                  id="login-password"
+                  label="Password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
+                  error={errors.password}
+                  required
+                  disabled={submitting}
+                />
               </>
             ) : (
               <>
@@ -388,63 +400,34 @@ export default function LoginPage({ sessionError, expired = false }) {
                     />
                   </div>
                 </Field>
-
-                {adminLoginInitiated && (
-                  <Field
-                    label="Admin OTP"
-                    htmlFor="admin-otp"
-                    error={errors.otp}
-                  >
-                    <div className="lab-input-wrap">
-                      <TextInput
-                        id="admin-otp"
-                        type="text"
-                        className={`lab-input--with-icon ${errors.otp ? "lab-input--invalid" : ""}`}
-                        value={otp}
-                        onChange={(event) => setOtp(event.target.value)}
-                        placeholder="123456"
-                        maxLength={6}
-                        autoComplete="one-time-code"
-                        spellCheck="false"
-                        aria-invalid={errors.otp ? "true" : undefined}
-                      />
-                    </div>
-                  </Field>
-                )}
-
-                <PasswordField
-                  id="login-password"
-                  label="Password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  autoComplete="current-password"
-                  placeholder="Enter your password"
-                  error={errors.password}
-                  required
-                  disabled={submitting}
-                />
-
-                <div className="login-form__meta">
-                  <span>
-                    <LockIcon className="h-3.5 w-3.5" /> Encrypted in transit
-                  </span>
-                  <span>
-                    <ShieldIcon className="h-3.5 w-3.5" /> Server-side sessions
-                  </span>
-                </div>
-
-                <AppButton
-                  type="submit"
-                  size="lg"
-                  className="login-submit"
-                  loading={submitting}
-                  disabled={submitting}
-                >
-                  {submitting ? "Signing in…" : "Sign in"}
-                  {!submitting && <ArrowRightIcon className="h-4 w-4" />}
-                </AppButton>
               </>
             )}
+
+            <div className="login-form__meta">
+              <span>
+                <LockIcon className="h-3.5 w-3.5" /> Encrypted in transit
+              </span>
+              <span>
+                <ShieldIcon className="h-3.5 w-3.5" /> Server-side sessions
+              </span>
+            </div>
+
+            <AppButton
+              type="submit"
+              size="lg"
+              className="login-submit"
+              loading={submitting}
+              disabled={submitting}
+            >
+              {submitting
+                ? mode === "admin"
+                  ? "Sending code…"
+                  : "Signing in…"
+                : mode === "admin"
+                  ? "Send verification code"
+                  : "Sign in"}
+              {!submitting && <ArrowRightIcon className="h-4 w-4" />}
+            </AppButton>
 
             <p className="login-help">
               Forgot your password? <AppLink to="/forgot-password">Reset it with email</AppLink>.<br />

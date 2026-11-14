@@ -9,8 +9,10 @@ export const authApi = {
       { login_type: loginType, login_id: loginId, password },
       { auth: false },
     ),
-  adminLogin: ({ email, password }) =>
-    api.post(`${BASE}/auth/admin-login`, { email, password }, { auth: false }),
+  adminLogin: ({ email }) =>
+    api.post(`${BASE}/auth/admin-login`, { email }, { auth: false }),
+  verifyAdminOTP: ({ otpCode }) =>
+    api.post(`${BASE}/auth/admin-verify-otp`, { otp: otpCode }, { auth: false }),
   logout: () => api.delete(`${BASE}/auth/logout`),
   me: () => api.get(`${BASE}/auth/me`),
   changePassword: ({ currentPassword, newPassword, passwordConfirmation }) =>

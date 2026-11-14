@@ -69,6 +69,9 @@ original artwork.
   until builds are approved, and the UI says "in preparation".
 - The contact email is the real lab address found in the backend:
   `edwin.lab.aiet@gmail.com`.
+- Footer social links live in the central `socialLinks` export in
+  `src/content/labContent.js`; they use official brand marks and brand-coloured
+  hover states.
 
 ## 3D Tux
 

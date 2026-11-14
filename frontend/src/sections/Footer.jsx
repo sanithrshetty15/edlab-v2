@@ -1,9 +1,17 @@
 import { Container, Button } from "../components/common";
 import { Mail } from "../components/common/Icons";
+import { InstagramIcon, LinkedInIcon, XIcon } from "../components/common/SocialIcons";
 import { useReveal } from "../hooks/useReveal";
-import { navigation, site, footer } from "../content/labContent";
+import { navigation, site, footer, socialLinks } from "../content/labContent";
 import wordmarkLight from "../assets/images/edwins-lab-wordmark-light.png";
 import InteractiveContourField from "../components/shared/InteractiveContourField";
+
+const socialIcons = {
+  linkedin: LinkedInIcon,
+  instagram: InstagramIcon,
+  x: XIcon,
+  email: Mail,
+};
 
 export default function Footer() {
   const revealRef = useReveal({ start: "top 90%" });
@@ -80,7 +88,35 @@ export default function Footer() {
                 <p className="font-orbitron text-[0.5625rem] font-semibold uppercase tracking-[0.2em] text-white/55">
                   Elsewhere
                 </p>
-                <ul className="mt-4 space-y-3">
+                <ul className="footer-social mt-4" aria-label="Edwins Lab social links">
+                  {socialLinks.map((link) => {
+                    const SocialIcon = socialIcons[link.id] || Mail;
+                    const opensNewTab = link.external;
+                    return (
+                      <li key={link.id}>
+                        <a
+                          href={link.href}
+                          target={opensNewTab ? "_blank" : undefined}
+                          rel={opensNewTab ? "noopener noreferrer" : undefined}
+                          aria-label={
+                            opensNewTab
+                              ? `${link.label} (opens in a new tab)`
+                              : `Email Edwins Lab at ${site.email}`
+                          }
+                          title={link.label}
+                          className={`footer-social__link footer-social__link--${link.id}`}
+                          style={{
+                            "--footer-social-brand":
+                              link.brandColorOnDark || link.brandColor,
+                          }}
+                        >
+                          <SocialIcon className="h-4 w-4" />
+                        </a>
+                      </li>
+                    );
+                  })}
+                </ul>
+                <ul className="mt-5 space-y-3">
                   <li>
                     <a
                       href={`mailto:${site.email}`}

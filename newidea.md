@@ -18,6 +18,8 @@ registration, door access, and deployment database paths.
   `biometric.process_event` job.
 - The upgraded deployment uses a separate PostgreSQL database. The existing
   database is left untouched.
+- The public footer now includes official LinkedIn, Instagram, X and email
+  links with accessible brand-coloured hover states.
 
 ## Registration flow
 
@@ -46,6 +48,51 @@ Validation rules:
 - Required Gmail variables: `GMAIL_USERNAME` and `GMAIL_APP_PASSWORD`.
 - The email is queued only after enrollment finalization. Delivery failures are
   recorded and can be retried from the admin dashboard.
+
+## Footer social links and contact email
+
+The public footer uses one central `socialLinks` configuration in
+`frontend/src/content/labContent.js`:
+
+| Platform | URL | Hover colour |
+|---|---|---|
+| LinkedIn | `https://www.linkedin.com/company/edwinslab/` | `#0A66C2` |
+| Instagram | `https://www.instagram.com/edwinslab.ig?igsh=MWlnaGZxZ2l0OWo0cg==` | `#E4405F` plus a subtle gradient |
+| X (Twitter) | `https://x.com/edwinslabs` | `#FFFFFF` on the dark footer (`#000000` in light mode) |
+| Email | `mailto:edwin.lab.aiet@gmail.com` | `#EA4335` |
+
+Footer behaviour:
+
+- Official platform SVG marks are used, not text symbols or emoji.
+- Icons match the existing muted footer theme by default.
+- Hover transitions run for 240ms and add the brand colour to the icon, border,
+  background and a restrained glow, with a small scale lift.
+- External links open in a new tab with `target="_blank"` and
+  `rel="noopener noreferrer"`.
+- The email link uses `mailto:` and opens in the same context.
+- Every link has an `aria-label` and a native `title` tooltip.
+- The icon row wraps on narrow screens and preserves the existing footer
+  navigation, email text link and back-to-top link.
+- `prefers-reduced-motion` disables the lift and transitions.
+
+The official lab contact email is `edwin.lab.aiet@gmail.com`. Repository searches
+found no remaining legacy library-mailbox references. Personal administrator
+emails (`sanithrshetty15@gmail.com`, `diganthhm714@gmail.com`) and the
+`edwins@aiet.org.in` administrator identity were intentionally left unchanged.
+
+## Backend Gmail configuration verification
+
+- `backend/internal/mailer/mailer.go` reads `GMAIL_USERNAME` and
+  `GMAIL_APP_PASSWORD` with `os.Getenv`; no credentials are hardcoded.
+- `backend/internal/config/config.go` reads `GMAIL_USERNAME` when deriving the
+  default `MAILER_FROM`.
+- Registration confirmation recipients come from the member's registered email
+  in `ensureRegistrationEmail` / `queueRegistrationConfirmation`.
+- The sender defaults to `Edwins Lab <edwin.lab.aiet@gmail.com>` when
+  `MAILER_FROM` is unset.
+- `backend/.env.example` documents both Gmail variables and the lab address.
+- Email delivery itself was not tested; no message was sent or received during
+  this change.
 
 ## Door access
 
@@ -131,12 +178,100 @@ in the repository.
 
 ## Verification
 
-- Backend: `go test ./...`
-- Frontend: `npm run lint`, `npm run build`
-- Firmware native state-machine tests: `pio test -e native`
-- Firmware build: `pio run -e esp32dev`
+- Backend: `go test ./...` passes.
+- Frontend: `npm run lint` reports 0 errors and 1 pre-existing React hook
+  warning; `npm run build` passes.
+- Headless browser check at 1440px and 375px: all four footer links resolve,
+  external links use `_blank` + `noopener noreferrer`, hover colours match the
+  brand palette, transitions are 240ms, and there is no horizontal overflow or
+  console error.
+- Firmware native state-machine tests: `pio test -e native` passes.
+- Firmware build: `pio run -e esp32dev` passes.
 - Integration tests requiring PostgreSQL: set `TEST_DATABASE_URL` before running
   the enrollment integration tests.
+
+Footer/contact update files:
+
+- `frontend/src/sections/Footer.jsx`
+- `frontend/src/components/common/SocialIcons.jsx`
+- `frontend/src/content/labContent.js`
+- `frontend/src/App.css`
+- `frontend/README.md`
+- `frontend/docs/CONTENT-VERIFICATION.md`
+- `newidea.md`
+
+## Mobile login and Android 1.2 release
+
+### Root cause
+
+The installed Android 1.1 APK still used the old admin login contract:
+
+1. The app sent an admin email and password to `POST /api/v1/auth/admin-login`.
+2. The upgraded backend no longer returns a session token from that endpoint; it
+   returns `{ "purpose": "admin_login" }` and emails a one-time code.
+3. The old app passed that response to `completeLogin`, which requires
+   `data.token`, producing `"The server did not return a session token."`.
+
+The current frontend source also had an incomplete OTP flow: the admin verify API
+and `verifyAndCompleteAdminLogin` were missing, and the member password field and
+submit button had accidentally been placed inside the admin form branch.
+
+### Fix
+
+- `frontend/src/api/services.js`
+  - `adminLogin` sends only the admin email.
+  - Added `verifyAdminOTP` for `POST /api/v1/auth/admin-verify-otp`.
+- `frontend/src/auth/AuthContext.jsx`
+  - Admin login now stores `pending_admin_otp` state.
+  - Added `verifyAndCompleteAdminLogin`, which verifies the OTP, stores the
+    returned token through `completeLogin`, and exposes the admin session.
+- `frontend/src/pages/LoginPage.jsx`
+  - Restored the member password field and shared submit button.
+  - Admin login now asks for email only, then shows the OTP verification screen.
+  - Admin submit label is `Send verification code`; OTP submit remains `Verify`.
+
+No backend authentication changes were required.
+
+### Verification
+
+- Playwright native-shell flow with mocked API:
+  - Valid member login, authenticated `/auth/me`, session persistence after
+    reload.
+  - Valid admin email plus OTP login, authenticated `/auth/me`, session
+    persistence after reload.
+  - Invalid member password returns `Invalid login credentials` and clears the
+    password.
+  - Missing token response shows `The server did not return a session token.`.
+  - Invalid admin OTP shows `Invalid or expired verification code`.
+  - Expired session returns the login screen with `Session expired`.
+- `go test ./...`: 10 passed in 14 packages.
+- `npm run build`: passed.
+- `npm run lint`: 0 errors, 1 pre-existing React hook warning.
+- Local backend: `admin-login` returned `purpose: admin_login`; an invalid
+  `admin-verify-otp` returned HTTP 422 with `Invalid or expired verification
+  code`.
+- Email OTP delivery was not verified because the mailbox was not accessible.
+
+### APK artifact
+
+- Version: `1.2` (`versionCode 3`), signed with the existing release keystore.
+- APK: `frontend/public/downloads/EdwinsLab-1.2.apk`
+- Manifest: `frontend/public/downloads/edwinslab-apk.json`
+- Manifest marks the update as mandatory so Android 1.1 builds with the broken
+  admin login are replaced.
+- SHA-256: `11a5e5f419fa5aaea18340961a5f0b18727e6e217428b827544f648554f7adfa`
+- The APK and manifest are staged locally but not deployed. Deploy the frontend
+  so `/downloads/EdwinsLab-1.2.apk` and the manifest are live on Vercel.
+
+Mobile login files:
+
+- `frontend/src/api/services.js`
+- `frontend/src/auth/AuthContext.jsx`
+- `frontend/src/pages/LoginPage.jsx`
+- `frontend/android/app/build.gradle`
+- `frontend/public/downloads/EdwinsLab-1.2.apk`
+- `frontend/public/downloads/edwinslab-apk.json`
+- `newidea.md`
 
 ## Open decisions
 
