@@ -188,10 +188,11 @@ export async function request(path, options = {}) {
 
   const controller = new AbortController();
   const timeoutId = window.setTimeout(() => controller.abort(), timeout);
+  const abortFromSignal = () => controller.abort();
 
   if (signal) {
     if (signal.aborted) controller.abort();
-    else signal.addEventListener("abort", () => controller.abort(), { once: true });
+    else signal.addEventListener("abort", abortFromSignal, { once: true });
   }
 
   let response;
@@ -204,6 +205,12 @@ export async function request(path, options = {}) {
       credentials: "omit",
     });
   } catch {
+    if (signal?.aborted) {
+      throw new ApiError("The request was cancelled.", {
+        code: "aborted",
+        path,
+      });
+    }
     if (controller.signal.aborted) {
       throw new ApiError("The request timed out. Check your connection and try again.", {
         code: "timeout",
@@ -216,6 +223,7 @@ export async function request(path, options = {}) {
     });
   } finally {
     window.clearTimeout(timeoutId);
+    if (signal) signal.removeEventListener("abort", abortFromSignal);
   }
 
   let data = null;

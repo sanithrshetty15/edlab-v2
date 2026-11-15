@@ -177,7 +177,12 @@ export default function MemberEnrollmentDialog({
   const [emailBusy, setEmailBusy] = useState(false);
   const [emailError, setEmailError] = useState(null);
   const [emailPollNonce, setEmailPollNonce] = useState(0);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState(null);
   const finalizedRef = useRef(success);
+  const cancelInFlightRef = useRef(false);
+  const cancelAbortRef = useRef(null);
+  const pollAbortRef = useRef(null);
 
   const isActive = Boolean(
     session?.is_active || (session && ACTIVE_STATUSES.has(session.status)),
@@ -288,34 +293,54 @@ export default function MemberEnrollmentDialog({
   }, [emailPollNonce, success, member.id]);
 
   useEffect(() => {
-    if (!isActive || success) return undefined;
+    if (!isActive || success || cancelling) return undefined;
     let stopped = false;
     let timer = null;
+    let controller = null;
+
+    const schedule = () => {
+      if (!stopped && !cancelInFlightRef.current) {
+        timer = window.setTimeout(poll, 2000);
+      }
+    };
 
     const poll = async () => {
+      if (stopped || cancelInFlightRef.current) return;
+      controller = new AbortController();
+      pollAbortRef.current = controller;
       try {
-        const result = await membersManagementApi.getFingerprintEnrollment(member.id);
+        const result = await membersManagementApi.getFingerprintEnrollment(member.id, {
+          signal: controller.signal,
+        });
         if (stopped) return;
         applyResult(result);
         setError(null);
-        if (result?.enrollment?.status === "finalized") {
-          window.clearInterval(timer);
-        }
+        if (result?.enrollment?.status !== "finalized") schedule();
       } catch (pollError) {
-        if (!stopped) setError(pollError);
+        if (stopped || pollError?.code === "aborted") return;
+        setError(pollError);
+        schedule();
+      } finally {
+        if (pollAbortRef.current === controller) pollAbortRef.current = null;
       }
     };
 
     poll();
-    timer = window.setInterval(poll, 2000);
     return () => {
       stopped = true;
-      window.clearInterval(timer);
+      window.clearTimeout(timer);
+      controller?.abort();
+      if (pollAbortRef.current === controller) pollAbortRef.current = null;
     };
-  }, [applyResult, isActive, member?.id, success]);
+  }, [applyResult, cancelling, isActive, member?.id, success]);
+
+  useEffect(() => () => {
+    cancelAbortRef.current?.abort();
+    pollAbortRef.current?.abort();
+  }, []);
 
   const handleStart = async () => {
-    if (busy) return;
+    if (busy || cancelling) return;
     if (!selectedReaderKey) {
       setError(new Error("Select an enrollment reader before starting."));
       return;
@@ -352,7 +377,7 @@ export default function MemberEnrollmentDialog({
   };
 
   const handleRefresh = async () => {
-    if (busy) return;
+    if (busy || cancelling) return;
     setBusy("refresh");
     setError(null);
     try {
@@ -366,16 +391,36 @@ export default function MemberEnrollmentDialog({
   };
 
   const handleCancel = async () => {
-    if (busy) return;
+    if (busy || cancelling || cancelInFlightRef.current) return;
+    cancelInFlightRef.current = true;
     setBusy("cancel");
+    setCancelling(true);
+    setCancelError(null);
     setError(null);
+    pollAbortRef.current?.abort();
+
+    const controller = new AbortController();
+    cancelAbortRef.current = controller;
     try {
-      const result = await membersManagementApi.cancelFingerprintEnrollment(member.id);
+      const result = await membersManagementApi.cancelFingerprintEnrollment(member.id, {
+        signal: controller.signal,
+      });
+      if (result?.enrollment) setSession(result.enrollment);
       setConfirmCancel(false);
-      onCancelled?.(result);
-    } catch (cancelError) {
-      setError(cancelError);
+      try {
+        onCancelled?.(result);
+      } catch (callbackError) {
+        setCancelError(callbackError);
+      }
+    } catch (cancellationError) {
+      if (cancellationError?.code !== "aborted") {
+        setCancelError(cancellationError);
+      }
+      setConfirmCancel(false);
     } finally {
+      cancelAbortRef.current = null;
+      cancelInFlightRef.current = false;
+      setCancelling(false);
       setBusy(null);
     }
   };
@@ -432,6 +477,12 @@ export default function MemberEnrollmentDialog({
       >
         <div className="lab-form-stack">
           <MemberRegistrationProgress current={success ? 3 : 2} />
+
+          {cancelError && (
+            <Alert tone="danger" title="Registration could not be cancelled">
+              {cancelError.message}
+            </Alert>
+          )}
 
           {error && (
             <Alert tone="danger" title="Enrollment status could not be updated">

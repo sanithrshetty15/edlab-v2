@@ -139,21 +139,39 @@ export function ConfirmDialog({
   loading = false,
   destructive = false,
 }) {
+  const confirmLockedRef = useRef(false);
+
+  useEffect(() => {
+    if (!open || !loading) confirmLockedRef.current = false;
+  }, [open, loading]);
+
+  const handleConfirm = () => {
+    if (loading || confirmLockedRef.current) return;
+    confirmLockedRef.current = true;
+    onConfirm?.();
+  };
+
+  const handleClose = () => {
+    if (loading) return;
+    onClose?.();
+  };
+
   return (
     <Modal
       open={open}
-      onClose={onClose}
+      onClose={handleClose}
+      dismissible={!loading}
       title={title}
       description={description}
       size="sm"
       footer={
         <>
-          <AppButton variant="ghost" onClick={onClose} disabled={loading}>
+          <AppButton variant="ghost" onClick={handleClose} disabled={loading}>
             {cancelLabel}
           </AppButton>
           <AppButton
             variant={destructive ? "danger" : "primary"}
-            onClick={onConfirm}
+            onClick={handleConfirm}
             loading={loading}
           >
             {confirmLabel}

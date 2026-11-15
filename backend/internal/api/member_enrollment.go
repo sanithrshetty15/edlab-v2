@@ -34,13 +34,17 @@ const (
 	enrollmentStatusCancelled        = "cancelled"
 	enrollmentStatusExpired          = "expired"
 
-	enrollmentSessionTTL = 10 * time.Minute
-	enrollmentSlotMin    = 1
-	enrollmentSlotMax    = 127
+	enrollmentSessionTTL             = 10 * time.Minute
+	enrollmentCancelLockTimeout      = 5 * time.Second
+	enrollmentCancelStatementTimeout = 10 * time.Second
+	enrollmentCancelRequestTimeout   = 15 * time.Second
+	enrollmentSlotMin                = 1
+	enrollmentSlotMax                = 127
 )
 
 var (
 	errEnrollmentMemberNotPending = errors.New("member is no longer pending enrollment")
+	errEnrollmentMappingExists    = errors.New("pending member already has a biometric mapping")
 	errEnrollmentSlotInUse        = errors.New("fingerprint slot is already assigned")
 	errEnrollmentSlotMismatch     = errors.New("fingerprint slot does not match the reported slot")
 	errEnrollmentSessionExpired   = errors.New("enrollment session expired")
@@ -562,10 +566,18 @@ func (s *Server) cancelMemberFingerprintEnrollment(c *gin.Context) {
 	if !ok {
 		return
 	}
-	ctx := c.Request.Context()
+	ctx, cancel := context.WithTimeout(c.Request.Context(), enrollmentCancelRequestTimeout)
+	defer cancel()
+
 	var member models.Member
-	if err := s.DB.WithContext(ctx).First(&member, memberID).Error; err != nil {
-		fail(c, http.StatusNotFound, "Record not found")
+	err := s.DB.WithContext(ctx).First(&member, memberID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		s.respondEnrollmentAlreadyCancelled(c, memberID)
+		return
+	}
+	if err != nil {
+		s.Log.Error("member registration cancellation lookup failed", "member_id", memberID, "error", err)
+		fail(c, http.StatusInternalServerError, "Unable to cancel registration")
 		return
 	}
 	if member.Status != memberStatusPendingEnrollment {
@@ -575,13 +587,20 @@ func (s *Server) cancelMemberFingerprintEnrollment(c *gin.Context) {
 
 	now := time.Now().UTC()
 	var cancelled *models.MemberEnrollmentSession
-	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec("SET LOCAL lock_timeout = '" + enrollmentCancelLockTimeout.String() + "'").Error; err != nil {
+			return err
+		}
+		if err := tx.Exec("SET LOCAL statement_timeout = '" + enrollmentCancelStatementTimeout.String() + "'").Error; err != nil {
+			return err
+		}
+
 		var mappingCount int64
 		if err := tx.Model(&models.BiometricEnrollment{}).Where("member_id = ?", member.ID).Count(&mappingCount).Error; err != nil {
 			return err
 		}
 		if mappingCount > 0 {
-			return fmt.Errorf("pending member already has a biometric mapping")
+			return errEnrollmentMappingExists
 		}
 
 		var latest models.MemberEnrollmentSession
@@ -627,7 +646,14 @@ func (s *Server) cancelMemberFingerprintEnrollment(c *gin.Context) {
 	})
 	if err != nil {
 		s.Log.Error("member registration cancellation failed", "member_id", member.ID, "error", err)
-		fail(c, http.StatusUnprocessableEntity, "Unable to cancel registration")
+		switch {
+		case isEnrollmentDatabaseTimeout(err):
+			fail(c, http.StatusConflict, "Cancellation is already in progress. Refresh and try again.")
+		case errors.Is(err, errEnrollmentMappingExists):
+			fail(c, http.StatusUnprocessableEntity, "Registration cannot be cancelled because a biometric mapping already exists")
+		default:
+			fail(c, http.StatusUnprocessableEntity, "Unable to cancel registration")
+		}
 		return
 	}
 
@@ -650,6 +676,40 @@ func (s *Server) cancelMemberFingerprintEnrollment(c *gin.Context) {
 		response["enrollment"] = serializeEnrollmentSession(cancelled, nil, nil)
 	}
 	c.JSON(http.StatusOK, response)
+}
+
+func (s *Server) respondEnrollmentAlreadyCancelled(c *gin.Context, memberID int64) {
+	ctx := c.Request.Context()
+	var latest models.MemberEnrollmentSession
+	err := s.DB.WithContext(ctx).
+		Where("member_id = ?", memberID).
+		Order("id DESC").
+		First(&latest).Error
+	if err != nil || latest.Status != enrollmentStatusCancelled {
+		fail(c, http.StatusNotFound, "Record not found")
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"message":    "Registration was already cancelled",
+		"enrollment": serializeEnrollmentSession(&latest, nil, nil),
+	})
+}
+
+func isEnrollmentDatabaseTimeout(err error) bool {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var state interface{ SQLState() string }
+	if !errors.As(err, &state) {
+		return false
+	}
+	switch state.SQLState() {
+	case "55P03", "57014":
+		return true
+	default:
+		return false
+	}
 }
 
 func stringPointer(value string) *string {
