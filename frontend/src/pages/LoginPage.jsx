@@ -587,7 +587,7 @@ export default function LoginPage({ sessionError, expired = false }) {
                           className={`lab-button lab-button--outline lab-button--lg login-google-button ${
                             submitting ? "login-google-button--disabled" : ""
                           }`}
-                          href={`${getApiBaseUrl()}/oauth/google/start`}
+                          href={`${getApiBaseUrl()}/api/v1/oauth/google/start`}
                           aria-disabled={submitting || undefined}
                           tabIndex={submitting ? -1 : undefined}
                           onClick={(event) => {
