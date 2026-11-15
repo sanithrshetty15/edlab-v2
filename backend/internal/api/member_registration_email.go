@@ -132,7 +132,7 @@ func (s *Server) queueRegistrationConfirmation(ctx context.Context, member *mode
 	if !force && (item.Status == registrationEmailQueued || item.Status == registrationEmailSending || item.Status == registrationEmailFailed) {
 		return item
 	}
-	if !s.EmailConfigured() {
+	if !s.EmailConfigured(ctx) {
 		s.markRegistrationEmailFailed(ctx, item, "Email delivery is not configured")
 		return item
 	}
@@ -191,7 +191,7 @@ func (s *Server) registrationConfirmationEmailJob(ctx context.Context, payload j
 	if item.Status == registrationEmailSent {
 		return nil
 	}
-	if !s.EmailConfigured() || s.Mailer == nil {
+	if !s.EmailConfigured(ctx) || s.Mailer == nil {
 		s.markRegistrationEmailFailed(ctx, item, "Email delivery is not configured")
 		return nil
 	}
@@ -245,7 +245,7 @@ func (s *Server) registrationConfirmationEmailJob(ctx context.Context, payload j
 		Identifier:      identifier,
 		AcademicYear:    member.AcademicYear,
 	})
-	if err := s.Mailer.SendEmailContent(item.Recipient, mailer.RegistrationConfirmationSubject, content); err != nil {
+	if err := s.Mailer.SendEmailContentContext(ctx, item.Recipient, mailer.RegistrationConfirmationSubject, content); err != nil {
 		s.markRegistrationEmailFailed(ctx, item, err.Error())
 		return fmt.Errorf("send registration confirmation email: %w", err)
 	}

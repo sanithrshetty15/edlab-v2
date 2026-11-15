@@ -44,7 +44,7 @@ func (s *Server) registerJobHandlers() {
 		if content.HTML == "" && content.Text == "" {
 			content.HTML = item.Body
 		}
-		return s.Mailer.SendEmailContent(item.To, item.Subject, content)
+		return s.Mailer.SendEmailContentContext(ctx, item.To, item.Subject, content)
 	}
 	s.Jobs.Register("email_delivery", handler)
 	s.Jobs.Register("mail.send", handler)
@@ -53,8 +53,24 @@ func (s *Server) registerJobHandlers() {
 	s.Jobs.Register("member.registration_email", s.registrationConfirmationEmailJob)
 }
 
-func (s *Server) EmailConfigured() bool {
-	return s.Mailer != nil && (s.Mailer.ResendAPIKey != "" || (s.Mailer.GmailUsername != "" && s.Mailer.GmailAppPassword != ""))
+func (s *Server) EmailConfigured(ctx context.Context) bool {
+	if s.Mailer == nil {
+		return false
+	}
+	if s.Mailer.Provider == mailer.ProviderGmailAPI {
+		if s.GmailAPI == nil || !s.GmailAPI.Enabled() {
+			return false
+		}
+		authorized, err := s.GmailAPI.Authorized(ctx)
+		if err != nil {
+			if s.Log != nil {
+				s.Log.Error("gmail oauth credential check failed", "error", err)
+			}
+			return false
+		}
+		return authorized
+	}
+	return s.Mailer.Configured()
 }
 
 func (s *Server) enqueueEmail(ctx context.Context, to, subject, body string) error {

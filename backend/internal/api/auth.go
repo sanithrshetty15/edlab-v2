@@ -510,7 +510,7 @@ func (s *Server) issueEmailOTP(c *gin.Context, user *models.User, purpose string
 	ctx := c.Request.Context()
 	now := time.Now().UTC()
 
-	if !s.EmailConfigured() || s.Jobs == nil {
+	if !s.EmailConfigured(ctx) || s.Jobs == nil {
 		return "", errEmailDeliveryUnavailable
 	}
 	if strings.TrimSpace(user.Email) == "" {

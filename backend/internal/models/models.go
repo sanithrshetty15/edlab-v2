@@ -107,6 +107,20 @@ func (OAuthLoginHandoff) TableName() string {
 	return "oauth_login_handoffs"
 }
 
+type GmailOAuthCredential struct {
+	ID                    int64     `gorm:"primaryKey" json:"-"`
+	EncryptedRefreshToken string    `gorm:"not null" json:"-"`
+	Scopes                string    `gorm:"not null;default:''" json:"-"`
+	TokenType             string    `gorm:"not null;default:'Bearer'" json:"-"`
+	AuthorizedAt          time.Time `gorm:"not null" json:"-"`
+	CreatedAt             time.Time `json:"-"`
+	UpdatedAt             time.Time `json:"-"`
+}
+
+func (GmailOAuthCredential) TableName() string {
+	return "gmail_oauth_credentials"
+}
+
 // OTPCode represents a one-time password for verification
 type OTPCode struct {
 	ID             int64     `gorm:"primaryKey" json:"-"`

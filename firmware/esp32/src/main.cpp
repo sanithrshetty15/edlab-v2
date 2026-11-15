@@ -58,6 +58,7 @@ unsigned long lastHeartbeat = 0;
 unsigned long lastAuthAttempt = 0;
 unsigned long lastEnrollmentRefresh = 0;
 unsigned long lastEnrollmentPoll = 0;
+unsigned long lastReaderReport = 0;
 
 EnrollmentInfo enrollments[MAX_ENROLLMENTS];
 size_t enrollmentCount = 0;
@@ -367,6 +368,23 @@ void handleHeartbeat() {
   }
   Serial.print("Heartbeat OK, pending events: ");
   Serial.println(pending);
+}
+
+void reportReaderIfDue(bool force) {
+  if (enrollmentReader == nullptr) {
+    return;
+  }
+  if (!force && millis() - lastReaderReport < READER_REPORT_INTERVAL) {
+    return;
+  }
+  lastReaderReport = millis();
+  if (!reportDeviceReaders(enrollmentReaderReady)) {
+    Serial.println("Reader report failed; will retry");
+    return;
+  }
+  Serial.print("Reader reported: login, UART ");
+  Serial.print(LOGIN_UART);
+  Serial.println(enrollmentReaderReady ? ", connected" : ", disconnected");
 }
 
 // ---------------------------------------------------------------------------
@@ -1021,6 +1039,7 @@ void loop() {
     if (millis() - lastAuthAttempt >= AUTH_RETRY_INTERVAL) {
       lastAuthAttempt = millis();
       if (authenticateDevice()) {
+        reportReaderIfDue(true);
         refreshEnrollmentsIfDue(true);
         successSignal();
       }
@@ -1034,6 +1053,7 @@ void loop() {
     handleHeartbeat();
     refreshEnrollmentsIfDue(false);
   }
+  reportReaderIfDue(false);
 
   if (mode == MODE_ENROLLMENT) {
     processActiveEnrollment();

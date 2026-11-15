@@ -63,12 +63,12 @@ func main() {
 	if cfg.FrontendURL != "" {
 		mail.FrontendURL = cfg.FrontendURL
 	}
-	if !mail.Configured() {
-		logger.Warn("no email provider configured; verification and notification emails will fail")
-	}
 
 	jobManager := jobs.New(&cfg, dbHandler.DB, logger)
 	server := api.New(dbHandler.DB, cfg, logger, mail, jobManager)
+	if !mail.Configured() {
+		logger.Warn("no email provider configured; verification and notification emails will fail")
+	}
 
 	workerCtx, cancelWorkers := context.WithCancel(context.Background())
 	defer cancelWorkers()

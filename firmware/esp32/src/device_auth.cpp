@@ -322,6 +322,38 @@ bool parseEnrollmentResponse(const String& response, int httpCode,
 
 } // namespace
 
+bool reportDeviceReaders(bool connected) {
+  JsonDocument request;
+  JsonArray readers = request["readers"].to<JsonArray>();
+  JsonObject reader = readers.add<JsonObject>();
+  reader["key"] = "login";
+  reader["label"] = "Login reader";
+  reader["uart"] = LOGIN_UART;
+  reader["connected"] = connected;
+
+  String body;
+  serializeJson(request, body);
+
+  String response;
+  int httpCode = 0;
+  if (!performDeviceRequest("POST", "/api/v1/biometric/readers", body, response, httpCode)) {
+    return false;
+  }
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.print("Reader report HTTP ");
+    Serial.print(httpCode);
+    Serial.print(": ");
+    Serial.println(response);
+    return false;
+  }
+
+  JsonDocument doc;
+  if (deserializeJson(doc, response)) {
+    return false;
+  }
+  return doc["success"].as<bool>();
+}
+
 bool authorizeDoorAccess(uint16_t slot, const String& readerKey,
                          bool& duplicate, String& reason) {
   duplicate = false;

@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/sanithrshetty15/edwinslab/backend/internal/config"
+	"github.com/sanithrshetty15/edwinslab/backend/internal/gmailapi"
 	"github.com/sanithrshetty15/edwinslab/backend/internal/httpx"
 	"github.com/sanithrshetty15/edwinslab/backend/internal/jobs"
 	"github.com/sanithrshetty15/edwinslab/backend/internal/mailer"
@@ -25,9 +26,11 @@ type Server struct {
 	Jobs        *jobs.Manager
 	Limiter     *ratelimit.Limiter
 	GoogleLogin *googleLoginService
+	GmailAPI    gmailOAuthService
 }
 
 func New(db *gorm.DB, cfg config.Config, log *slog.Logger, mail *mailer.Mailer, jobManager *jobs.Manager) *Server {
+	gmailService := gmailapi.New(db, cfg)
 	server := &Server{
 		DB:          db,
 		Config:      cfg,
@@ -37,6 +40,11 @@ func New(db *gorm.DB, cfg config.Config, log *slog.Logger, mail *mailer.Mailer, 
 		Jobs:        jobManager,
 		Limiter:     ratelimit.New(),
 		GoogleLogin: newGoogleLoginService(cfg),
+		GmailAPI:    gmailService,
+	}
+	if mail != nil {
+		mail.Provider = cfg.MailProvider
+		mail.GmailAPI = gmailService
 	}
 	server.registerJobHandlers()
 	return server
@@ -56,6 +64,7 @@ func (s *Server) Router() *gin.Engine {
 
 	s.registerAuthRoutes(api)
 	s.registerGoogleLoginRoutes(api)
+	s.registerGmailOAuthRoutes(api)
 	s.registerDeviceRoutes(api)
 	s.registerMemberRoutes(api)
 	s.registerAdminRoutes(api)

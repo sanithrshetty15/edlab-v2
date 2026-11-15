@@ -93,6 +93,12 @@
 #define ENROLLMENT_SCAN_INTERVAL 300UL
 #endif
 
+// How often the controller refreshes the backend's view of the connected
+// entry reader. The backend treats reader availability as stale after 90s.
+#ifndef READER_REPORT_INTERVAL
+#define READER_REPORT_INTERVAL 30000UL
+#endif
+
 // Electromagnetic lock relay.
 // Fail-safe wiring: the lock is energised while locked and releases when the
 // relay is de-energised, so an emergency exit works without Wi-Fi or power.

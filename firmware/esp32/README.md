@@ -141,6 +141,11 @@ contains a one-hour `X-Device-Token`, which is used for enrollment, status,
 event submission and sync. The firmware re-authenticates automatically after a
 `401`/`403`.
 
+After successful authentication the firmware reports the connected entry
+reader with `POST /api/v1/biometric/readers`, then refreshes that report every
+30 seconds (`READER_REPORT_INTERVAL`). This is required before an administrator
+can start fingerprint enrollment.
+
 ### Key rotation and revocation
 
 ```bash
@@ -226,6 +231,7 @@ All routes are under `https://<host>/api/v1`. Device routes authenticate with
 | Endpoint | Method | Purpose | Auth |
 |---|---|---|---|
 | `/api/v1/biometric/authenticate-device` | POST | Exchange `{api_key, device_name}` for a token | none |
+| `/api/v1/biometric/readers` | POST | Report the connected entry reader | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-session` | GET | Claim cleanup or active enrollment work | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-sessions/:uid` | GET | Check status, cancellation, or expiry | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-sessions/:uid/progress` | POST | Report two-scan progress | `X-Device-Token` |

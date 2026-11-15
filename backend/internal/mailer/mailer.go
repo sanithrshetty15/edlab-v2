@@ -2,6 +2,7 @@ package mailer
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,10 +17,20 @@ import (
 )
 
 const (
+	ProviderResend    = "resend"
+	ProviderGmailSMTP = "gmail_smtp"
+	ProviderGmailAPI  = "gmail_api"
+
 	resendEndpoint                  = "https://api.resend.com/emails"
 	labEmail                        = "edwin.lab.aiet@gmail.com"
 	RegistrationConfirmationSubject = "EdwinsLab – Membership Registration Successful"
 )
+
+type GmailAPISender interface {
+	Enabled() bool
+	Authorized(ctx context.Context) (bool, error)
+	Send(ctx context.Context, rawMIME []byte) error
+}
 
 type RegistrationConfirmationData struct {
 	Name            string
@@ -41,6 +52,8 @@ type Mailer struct {
 	ResendAPIKey     string
 	GmailUsername    string
 	GmailAppPassword string
+	Provider         string
+	GmailAPI         GmailAPISender
 	From             string
 	FrontendURL      string
 	smtpHost         string
@@ -62,6 +75,7 @@ func New() *Mailer {
 		ResendAPIKey:     strings.TrimSpace(os.Getenv("RESEND_API_KEY")),
 		GmailUsername:    strings.TrimSpace(os.Getenv("GMAIL_USERNAME")),
 		GmailAppPassword: strings.TrimSpace(os.Getenv("GMAIL_APP_PASSWORD")),
+		Provider:         normalizeProvider(os.Getenv("MAIL_PROVIDER")),
 		From:             from,
 		FrontendURL:      strings.TrimSpace(os.Getenv("FRONTEND_URL")),
 		smtpHost:         envOr("SMTP_HOST", "smtp.gmail.com"),
@@ -70,9 +84,28 @@ func New() *Mailer {
 	}
 }
 
+func normalizeProvider(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func (m *Mailer) provider() string {
+	return normalizeProvider(m.Provider)
+}
+
 // Configured reports whether at least one email provider is available.
 func (m *Mailer) Configured() bool {
-	return m.ResendAPIKey != "" || (m.GmailUsername != "" && m.GmailAppPassword != "")
+	switch m.provider() {
+	case ProviderGmailAPI:
+		return m.GmailAPI != nil && m.GmailAPI.Enabled()
+	case ProviderResend:
+		return m.ResendAPIKey != ""
+	case ProviderGmailSMTP:
+		return m.gmailConfigured()
+	case "":
+		return m.ResendAPIKey != "" || m.gmailConfigured()
+	default:
+		return false
+	}
 }
 
 // SendEmail sends an HTML-only email using the configured provider. It is kept
@@ -82,9 +115,11 @@ func (m *Mailer) SendEmail(to, subject, body string) error {
 	return m.SendEmailContent(to, subject, EmailContent{HTML: body})
 }
 
-// SendEmailContent sends an HTML and plain-text email using the configured
-// provider. Resend is preferred when configured; Gmail SMTP is the fallback.
 func (m *Mailer) SendEmailContent(to, subject string, content EmailContent) error {
+	return m.SendEmailContentContext(context.Background(), to, subject, content)
+}
+
+func (m *Mailer) SendEmailContentContext(ctx context.Context, to, subject string, content EmailContent) error {
 	to = strings.TrimSpace(to)
 	subject = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(subject, "\r", " "), "\n", " "))
 	content.HTML = strings.TrimSpace(content.HTML)
@@ -98,17 +133,42 @@ func (m *Mailer) SendEmailContent(to, subject string, content EmailContent) erro
 	if content.HTML == "" && content.Text == "" {
 		return fmt.Errorf("email content is required")
 	}
-	if m.ResendAPIKey != "" {
-		if err := m.sendViaResend(to, subject, content); err == nil {
-			return nil
-		} else if !m.gmailConfigured() {
+
+	switch m.provider() {
+	case ProviderGmailAPI:
+		if m.GmailAPI == nil || !m.GmailAPI.Enabled() {
+			return fmt.Errorf("Gmail API is not configured")
+		}
+		message, err := m.buildGmailMessage(to, subject, content)
+		if err != nil {
 			return err
 		}
-	}
-	if m.gmailConfigured() {
+		return m.GmailAPI.Send(ctx, message)
+	case ProviderResend:
+		if m.ResendAPIKey == "" {
+			return fmt.Errorf("Resend is not configured")
+		}
+		return m.sendViaResend(to, subject, content)
+	case ProviderGmailSMTP:
+		if !m.gmailConfigured() {
+			return fmt.Errorf("Gmail SMTP is not configured")
+		}
 		return m.sendViaGmail(to, subject, content)
+	case "":
+		if m.ResendAPIKey != "" {
+			if err := m.sendViaResend(to, subject, content); err == nil {
+				return nil
+			} else if !m.gmailConfigured() {
+				return err
+			}
+		}
+		if m.gmailConfigured() {
+			return m.sendViaGmail(to, subject, content)
+		}
+		return fmt.Errorf("no email provider configured")
+	default:
+		return fmt.Errorf("unsupported email provider %q", m.provider())
 	}
-	return fmt.Errorf("no email provider configured")
 }
 
 func (m *Mailer) gmailConfigured() bool {

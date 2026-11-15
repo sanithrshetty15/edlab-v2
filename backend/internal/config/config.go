@@ -2,6 +2,7 @@ package config
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -14,33 +15,38 @@ import (
 )
 
 type Config struct {
-	AppEnv                 string
-	Port                   string
-	DatabaseURL            string
-	JWTSecret              string
-	SessionSecret          string
-	FrontendURL            string
-	CORSAllowedOrigins     []string
-	SessionTTLMember       time.Duration
-	SessionTTLAdmin        time.Duration
-	OTPExpiry              time.Duration
-	OTPMaxAttempts         int
-	OTPRequestWindow       time.Duration
-	OTPMaxRequests         int
-	OTPTestRecipient       string
-	MailerFrom             string
-	SMTPHost               string
-	SMTPPort               string
-	GoogleLoginClientID    string
-	GoogleLoginSecret      string
-	GoogleLoginRedirectURL string
-	UploadDir              string
-	MaxUploadBytes         int64
-	RateLimitRequests      int
-	RateLimitPeriod        time.Duration
-	DeviceHMACSecret       string
-	BootstrapReset         bool
-	Timezone               string
+	AppEnv                  string
+	Port                    string
+	DatabaseURL             string
+	JWTSecret               string
+	SessionSecret           string
+	FrontendURL             string
+	CORSAllowedOrigins      []string
+	SessionTTLMember        time.Duration
+	SessionTTLAdmin         time.Duration
+	OTPExpiry               time.Duration
+	OTPMaxAttempts          int
+	OTPRequestWindow        time.Duration
+	OTPMaxRequests          int
+	OTPTestRecipient        string
+	MailerFrom              string
+	MailProvider            string
+	SMTPHost                string
+	SMTPPort                string
+	GoogleLoginClientID     string
+	GoogleLoginSecret       string
+	GoogleLoginRedirectURL  string
+	GmailOAuthClientID      string
+	GmailOAuthClientSecret  string
+	GmailOAuthRedirectURL   string
+	GmailTokenEncryptionKey string
+	UploadDir               string
+	MaxUploadBytes          int64
+	RateLimitRequests       int
+	RateLimitPeriod         time.Duration
+	DeviceHMACSecret        string
+	BootstrapReset          bool
+	Timezone                string
 }
 
 func LoadConfig() (Config, error) {
@@ -49,33 +55,52 @@ func LoadConfig() (Config, error) {
 	}
 
 	cfg := Config{
-		AppEnv:                 getEnv("APP_ENV", "development"),
-		Port:                   getEnv("PORT", "8080"),
-		DatabaseURL:            getEnv("DATABASE_URL", ""),
-		JWTSecret:              getEnv("JWT_SECRET", ""),
-		SessionSecret:          getEnv("SESSION_SECRET", ""),
-		FrontendURL:            getEnv("FRONTEND_URL", "http://localhost:5173"),
-		CORSAllowedOrigins:     parseList(getEnv("CORS_ALLOWED_ORIGINS", getEnv("CORS_ORIGINS", ""))),
-		SessionTTLMember:       durationEnv("SESSION_TTL_SECONDS", 24*time.Hour),
-		SessionTTLAdmin:        durationEnv("ADMIN_SESSION_TTL_SECONDS", durationEnv("SESSION_TTL_SECONDS", 24*time.Hour)),
-		OTPExpiry:              otpExpiryEnv(),
-		OTPMaxAttempts:         intEnv("OTP_MAX_ATTEMPTS", 5),
-		OTPRequestWindow:       durationEnv("OTP_REQUEST_WINDOW_SECONDS", 15*time.Minute),
-		OTPMaxRequests:         intEnv("OTP_MAX_REQUESTS", 5),
-		OTPTestRecipient:       strings.TrimSpace(os.Getenv("OTP_TEST_RECIPIENT")),
-		MailerFrom:             getEnv("MAILER_FROM", ""),
-		SMTPHost:               getEnv("SMTP_HOST", "smtp.gmail.com"),
-		SMTPPort:               getEnv("SMTP_PORT", "587"),
-		GoogleLoginClientID:    getEnv("GOOGLE_LOGIN_CLIENT_ID", ""),
-		GoogleLoginSecret:      getEnv("GOOGLE_LOGIN_CLIENT_SECRET", ""),
-		GoogleLoginRedirectURL: getEnv("GOOGLE_LOGIN_REDIRECT_URL", ""),
-		UploadDir:              getEnv("UPLOAD_DIR", "data/uploads"),
-		MaxUploadBytes:         int64(intEnv("MAX_UPLOAD_BYTES", 20*1024*1024)),
-		RateLimitRequests:      intEnv("RATE_LIMIT_REQUESTS", 100),
-		RateLimitPeriod:        durationEnv("RATE_LIMIT_PERIOD_SECONDS", time.Minute),
-		DeviceHMACSecret:       getEnv("BIOMETRIC_API_SECRET", ""),
-		BootstrapReset:         boolEnv("ADMIN_BOOTSTRAP_RESET_PASSWORDS", false),
-		Timezone:               getEnv("APP_TIMEZONE", "Asia/Kolkata"),
+		AppEnv:                  getEnv("APP_ENV", "development"),
+		Port:                    getEnv("PORT", "8080"),
+		DatabaseURL:             getEnv("DATABASE_URL", ""),
+		JWTSecret:               getEnv("JWT_SECRET", ""),
+		SessionSecret:           getEnv("SESSION_SECRET", ""),
+		FrontendURL:             getEnv("FRONTEND_URL", "http://localhost:5173"),
+		CORSAllowedOrigins:      parseList(getEnv("CORS_ALLOWED_ORIGINS", getEnv("CORS_ORIGINS", ""))),
+		SessionTTLMember:        durationEnv("SESSION_TTL_SECONDS", 24*time.Hour),
+		SessionTTLAdmin:         durationEnv("ADMIN_SESSION_TTL_SECONDS", durationEnv("SESSION_TTL_SECONDS", 24*time.Hour)),
+		OTPExpiry:               otpExpiryEnv(),
+		OTPMaxAttempts:          intEnv("OTP_MAX_ATTEMPTS", 5),
+		OTPRequestWindow:        durationEnv("OTP_REQUEST_WINDOW_SECONDS", 15*time.Minute),
+		OTPMaxRequests:          intEnv("OTP_MAX_REQUESTS", 5),
+		OTPTestRecipient:        strings.TrimSpace(os.Getenv("OTP_TEST_RECIPIENT")),
+		MailerFrom:              getEnv("MAILER_FROM", ""),
+		MailProvider:            strings.ToLower(getEnv("MAIL_PROVIDER", "")),
+		SMTPHost:                getEnv("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:                getEnv("SMTP_PORT", "587"),
+		GoogleLoginClientID:     getEnv("GOOGLE_LOGIN_CLIENT_ID", ""),
+		GoogleLoginSecret:       getEnv("GOOGLE_LOGIN_CLIENT_SECRET", ""),
+		GoogleLoginRedirectURL:  getEnv("GOOGLE_LOGIN_REDIRECT_URL", ""),
+		GmailOAuthClientID:      getEnv("GMAIL_OAUTH_CLIENT_ID", ""),
+		GmailOAuthClientSecret:  getEnv("GMAIL_OAUTH_CLIENT_SECRET", ""),
+		GmailOAuthRedirectURL:   getEnv("GMAIL_OAUTH_REDIRECT_URL", ""),
+		GmailTokenEncryptionKey: getEnv("GMAIL_TOKEN_ENCRYPTION_KEY", ""),
+		UploadDir:               getEnv("UPLOAD_DIR", "data/uploads"),
+		MaxUploadBytes:          int64(intEnv("MAX_UPLOAD_BYTES", 20*1024*1024)),
+		RateLimitRequests:       intEnv("RATE_LIMIT_REQUESTS", 100),
+		RateLimitPeriod:         durationEnv("RATE_LIMIT_PERIOD_SECONDS", time.Minute),
+		DeviceHMACSecret:        getEnv("BIOMETRIC_API_SECRET", ""),
+		BootstrapReset:          boolEnv("ADMIN_BOOTSTRAP_RESET_PASSWORDS", false),
+		Timezone:                getEnv("APP_TIMEZONE", "Asia/Kolkata"),
+	}
+
+	switch cfg.MailProvider {
+	case "", "resend", "gmail_smtp", "gmail_api":
+	default:
+		return Config{}, fmt.Errorf("MAIL_PROVIDER must be one of resend, gmail_smtp, gmail_api")
+	}
+	if cfg.MailProvider == "gmail_api" {
+		if cfg.GmailOAuthClientID == "" || cfg.GmailOAuthClientSecret == "" || cfg.GmailOAuthRedirectURL == "" {
+			return Config{}, fmt.Errorf("GMAIL_OAUTH_CLIENT_ID, GMAIL_OAUTH_CLIENT_SECRET and GMAIL_OAUTH_REDIRECT_URL must be set when MAIL_PROVIDER=gmail_api")
+		}
+		if _, err := decodeEncryptionKey(cfg.GmailTokenEncryptionKey); err != nil {
+			return Config{}, fmt.Errorf("GMAIL_TOKEN_ENCRYPTION_KEY: %w", err)
+		}
 	}
 
 	if cfg.AppEnv == "production" {
@@ -251,4 +276,30 @@ func randomSecret() string {
 		return fmt.Sprintf("insecure-%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(buffer)
+}
+
+func decodeEncryptionKey(value string) ([]byte, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, fmt.Errorf("must be set")
+	}
+	for _, encoding := range []*base64.Encoding{
+		base64.StdEncoding,
+		base64.RawStdEncoding,
+		base64.URLEncoding,
+		base64.RawURLEncoding,
+	} {
+		if decoded, err := encoding.DecodeString(value); err == nil && len(decoded) == 32 {
+			return decoded, nil
+		}
+	}
+	if len(value) == 64 {
+		if decoded, err := hex.DecodeString(value); err == nil {
+			return decoded, nil
+		}
+	}
+	if len(value) == 32 {
+		return []byte(value), nil
+	}
+	return nil, fmt.Errorf("must decode to exactly 32 bytes")
 }
