@@ -2205,6 +2205,7 @@ body.password-mode::selection {
   color: var(--lab-muted);
   font-size: 0.7rem;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 
 .login-tabs {
@@ -2263,6 +2264,64 @@ body.password-mode::selection {
 .login-legal {
   color: var(--lab-faint);
   font-size: 0.57rem;
+}
+
+.login-otp-input {
+  font-family: var(--font-poppins);
+  font-size: 1.35rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.55em;
+  padding-left: 0.55em;
+  text-align: center;
+}
+
+.login-otp-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.login-otp-actions .login-help {
+  margin-top: 0;
+}
+
+.login-otp-actions > .login-resend-button {
+  color: var(--lab-faint);
+  font-size: 0.63rem;
+  text-decoration: none;
+}
+
+.login-otp-actions > .login-resend-button:hover {
+  color: var(--lab-accent);
+}
+
+.login-resend-button {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--lab-accent);
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.login-resend-button:hover {
+  color: var(--lab-text);
+}
+
+.login-resend-button:disabled {
+  color: var(--lab-faint);
+  cursor: not-allowed;
+  text-decoration: none;
+}
+
+.login-resend-countdown {
+  color: var(--lab-faint);
+  font-variant-numeric: tabular-nums;
 }
 
 .login-mode .lab-alert {

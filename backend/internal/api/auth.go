@@ -75,6 +75,19 @@ func (s *Server) createSession(c *gin.Context, user *models.User) (string, *mode
 	return token, &session, nil
 }
 
+func sessionExpiry(session *models.Session) any {
+	if session == nil || session.ExpiresAt == nil {
+		return nil
+	}
+	return session.ExpiresAt.UTC()
+}
+
+func noStore(c *gin.Context) {
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	c.Next()
+}
+
 func (s *Server) memberLogin(c *gin.Context) {
 	var request memberLoginRequest
 	if !bindJSON(c, &request) {
@@ -125,7 +138,7 @@ func (s *Server) memberLogin(c *gin.Context) {
 		return
 	}
 
-	token, _, err := s.createSession(c, &user)
+	token, session, err := s.createSession(c, &user)
 	if err != nil {
 		s.Log.Error("member session creation failed", "error", err)
 		fail(c, http.StatusInternalServerError, "Unable to sign in")
@@ -137,6 +150,8 @@ func (s *Server) memberLogin(c *gin.Context) {
 		"success":              true,
 		"message":              "Login successful",
 		"token":                token,
+		"token_type":           "Bearer",
+		"expires_at":           sessionExpiry(session),
 		"must_change_password": member.MustChangePassword,
 		"user": gin.H{
 			"id":         user.ID,
@@ -158,6 +173,10 @@ func (s *Server) adminLogin(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "Email is required")
 		return
 	}
+	if !emailPattern.MatchString(email) {
+		fail(c, http.StatusUnprocessableEntity, "Enter a valid email address")
+		return
+	}
 
 	var user models.User
 	err := s.DB.WithContext(c.Request.Context()).Where("LOWER(email) = ?", email).First(&user).Error
@@ -175,19 +194,29 @@ func (s *Server) adminLogin(c *gin.Context) {
 		return
 	}
 
-	code, err := s.issueEmailOTP(c, &user, "admin_login")
-	if err != nil {
-		s.Log.Error("admin OTP issuance failed", "user_id", user.ID, "error", err)
-		fail(c, http.StatusInternalServerError, "Unable to send verification code")
+	if _, err := s.issueEmailOTP(c, &user, "admin_login"); err != nil {
+		switch {
+		case errors.Is(err, security.ErrPasswordResetRateLimited):
+			s.Log.Warn("admin OTP request rate limited", "user_id", user.ID)
+			fail(c, http.StatusTooManyRequests, "Too many verification code requests. Please try again later.")
+		case errors.Is(err, errEmailDeliveryUnavailable):
+			s.Log.Error("admin OTP delivery unavailable", "user_id", user.ID)
+			fail(c, http.StatusServiceUnavailable, "Email delivery is not configured. Contact the lab team.")
+		default:
+			s.Log.Error("admin OTP issuance failed", "user_id", user.ID, "error", err)
+			fail(c, http.StatusInternalServerError, "Unable to send verification code")
+		}
 		return
 	}
-	_ = code
 
 	s.audit(c, "admin_login", "User", &user.ID, gin.H{"purpose": "admin_login"})
+	s.Log.Info("admin OTP queued", "user_id", user.ID, "email", maskEmail(user.Email))
+
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Verification code sent to administrator email",
-		"purpose": "admin_login",
+		"success":      true,
+		"message":      "Verification code queued for delivery to administrator email",
+		"purpose":      "admin_login",
+		"email_status": "queued",
 	})
 }
 
@@ -456,6 +485,13 @@ func (s *Server) issueEmailOTP(c *gin.Context, user *models.User, purpose string
 	ctx := c.Request.Context()
 	now := time.Now().UTC()
 
+	if !s.EmailConfigured() || s.Jobs == nil {
+		return "", errEmailDeliveryUnavailable
+	}
+	if strings.TrimSpace(user.Email) == "" {
+		return "", errors.New("account email is missing")
+	}
+
 	var recent int64
 	if err := s.DB.WithContext(ctx).Model(&models.OTPCode{}).
 		Where("user_id = ? AND purpose = ? AND created_at > ?", user.ID, purpose, now.Add(-s.Config.OTPRequestWindow)).
@@ -595,7 +631,7 @@ func (s *Server) verifyAdminOTP(c *gin.Context) {
 		return
 	}
 
-	token, _, err := s.createSession(c, &user)
+	token, session, err := s.createSession(c, &user)
 	if err != nil {
 		s.Log.Error("admin session creation failed", "error", err)
 		fail(c, http.StatusInternalServerError, "Unable to sign in")
@@ -609,10 +645,13 @@ func (s *Server) verifyAdminOTP(c *gin.Context) {
 	}
 
 	s.audit(c, "admin_login", "User", &user.ID, nil)
+
 	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "Admin login successful",
-		"token":   token,
+		"success":    true,
+		"message":    "Admin login successful",
+		"token":      token,
+		"token_type": "Bearer",
+		"expires_at": sessionExpiry(session),
 		"admin": gin.H{
 			"id":         admin.ID,
 			"name":       admin.Name,

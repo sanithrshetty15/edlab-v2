@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,6 +12,10 @@ import (
 	"github.com/sanithrshetty15/edwinslab/backend/internal/mailer"
 	"github.com/sanithrshetty15/edwinslab/backend/internal/models"
 )
+
+// errEmailDeliveryUnavailable indicates that no mail provider or queue is
+// configured, so an OTP must not be created or reported as sent.
+var errEmailDeliveryUnavailable = errors.New("email delivery is unavailable")
 
 type emailJobPayload struct {
 	To      string `json:"to"`

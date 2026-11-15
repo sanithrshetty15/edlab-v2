@@ -1,12 +1,12 @@
 {
   "redirects": [
-    { "source": "/login", "destination": "/", "permanent": false },
-    { "source": "/register", "destination": "/", "permanent": false },
-    { "source": "/forgot-password", "destination": "/", "permanent": false },
-    { "source": "/app", "destination": "/", "permanent": false },
-    { "source": "/app/:path*", "destination": "/", "permanent": false }
+    { "source": "/register", "destination": "/login", "permanent": false }
   ],
   "rewrites": [
+    { "source": "/login", "destination": "/index.html" },
+    { "source": "/forgot-password", "destination": "/index.html" },
+    { "source": "/app", "destination": "/index.html" },
+    { "source": "/app/:path*", "destination": "/index.html" },
     { "source": "/explore", "destination": "/index.html" }
   ],
   "headers": [

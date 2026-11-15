@@ -226,8 +226,18 @@ export default function MenuOverlay({
 
               <div className="flex flex-wrap gap-2">
                 <Button
-                  href="#download"
+                  href="/login"
                   variant="primary"
+                  size="md"
+                  onClick={onClose}
+                  className="self-start"
+                >
+                  Member or admin sign in
+                  <ArrowUpRight className="h-4 w-4" />
+                </Button>
+                <Button
+                  href="#download"
+                  variant="light"
                   size="md"
                   onClick={onClose}
                   className="self-start"

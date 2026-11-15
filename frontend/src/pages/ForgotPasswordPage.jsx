@@ -6,6 +6,14 @@ import { ArrowLeftIcon, ArrowRightIcon, LockIcon, MailIcon } from "../components
 import { Alert, AppButton, Field, PasswordField, TextInput } from "../components/app/Ui";
 import { navigate } from "../utils/router";
 
+const RESEND_COOLDOWN_SECONDS = 60;
+
+function formatCountdown(seconds) {
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
 export default function ForgotPasswordPage() {
   const [step, setStep] = useState("request");
   const [loginId, setLoginId] = useState("");
@@ -16,6 +24,8 @@ export default function ForgotPasswordPage() {
   const [formError, setFormError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [sent, setSent] = useState(false);
+  const [statusMessage, setStatusMessage] = useState(null);
+  const [resendSeconds, setResendSeconds] = useState(0);
 
   useEffect(() => {
     document.title = "Reset password — Edwins Lab";
@@ -23,9 +33,17 @@ export default function ForgotPasswordPage() {
     return () => document.body.classList.remove("login-mode");
   }, []);
 
-  const requestCode = async (event) => {
-    event.preventDefault();
-    if (submitting) return;
+  useEffect(() => {
+    if (resendSeconds <= 0) return undefined;
+    const timer = window.setTimeout(
+      () => setResendSeconds((current) => Math.max(current - 1, 0)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [resendSeconds]);
+
+  const sendCode = async (resend = false) => {
+    if (submitting || (resend && resendSeconds > 0)) return;
 
     if (!loginId.trim()) {
       setErrors({ loginId: "Enter your lab login ID." });
@@ -34,15 +52,25 @@ export default function ForgotPasswordPage() {
 
     setSubmitting(true);
     setFormError(null);
+    setStatusMessage(null);
     try {
       await authApi.requestPasswordReset({ loginId: loginId.trim() });
       setSent(true);
       setStep("reset");
+      setResendSeconds(RESEND_COOLDOWN_SECONDS);
+      if (resend) {
+        setStatusMessage("A new verification code was queued for delivery.");
+      }
     } catch (error) {
       setFormError(error);
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const requestCode = async (event) => {
+    event.preventDefault();
+    await sendCode(false);
   };
 
   const resetPassword = async (event) => {
@@ -116,14 +144,21 @@ export default function ForgotPasswordPage() {
             <p>
               {step === "request"
                 ? "Enter the login ID your lab account uses."
-                : `If an account exists for ${loginId}, a code is on its way by email.`}
+                : `If an account exists for ${loginId}, a 4-digit code was queued for the email on record.`}
             </p>
           </header>
 
-          {sent && step === "reset" && (
+          {statusMessage && (
+            <Alert tone="success" title="Code requested">
+              {statusMessage}
+            </Alert>
+          )}
+
+          {sent && step === "reset" && !statusMessage && (
             <Alert tone="info" title="Check your email">
-              Enter the verification code and choose a new password. If the email does
-              not arrive, contact the lab team.
+              Enter the verification code and choose a new password. It expires five
+              minutes after it is created. If the email does not arrive, contact the lab
+              team.
             </Alert>
           )}
 
@@ -168,7 +203,7 @@ export default function ForgotPasswordPage() {
               >
                 <TextInput
                   id="reset-otp"
-                  className={errors.otp ? "lab-input--invalid" : ""}
+                  className={`login-otp-input ${errors.otp ? "lab-input--invalid" : ""}`}
                   value={otp}
                   onChange={(event) => {
                     setOtp(event.target.value.replace(/\D/g, "").slice(0, 4));
@@ -179,6 +214,7 @@ export default function ForgotPasswordPage() {
                   maxLength={4}
                   autoComplete="one-time-code"
                   placeholder="0000"
+                  autoFocus
                   disabled={submitting}
                 />
               </Field>
@@ -214,17 +250,39 @@ export default function ForgotPasswordPage() {
                 Reset password
                 {!submitting && <ArrowRightIcon className="h-4 w-4" />}
               </AppButton>
-              <AppButton
-                variant="ghost"
-                onClick={() => {
-                  setStep("request");
-                  setFormError(null);
-                  setOtp("");
-                }}
-                disabled={submitting}
-              >
-                Use a different login ID
-              </AppButton>
+              <div className="login-otp-actions">
+                <p className="login-help">
+                  Did not receive the code?{" "}
+                  {resendSeconds > 0 ? (
+                    <span className="login-resend-countdown" aria-live="polite">
+                      Resend available in {formatCountdown(resendSeconds)}
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="login-resend-button"
+                      onClick={() => sendCode(true)}
+                      disabled={submitting}
+                    >
+                      Resend code
+                    </button>
+                  )}
+                </p>
+                <button
+                  type="button"
+                  className="login-resend-button"
+                  onClick={() => {
+                    setStep("request");
+                    setFormError(null);
+                    setStatusMessage(null);
+                    setOtp("");
+                    setResendSeconds(0);
+                  }}
+                  disabled={submitting}
+                >
+                  Use a different login ID
+                </button>
+              </div>
             </form>
           )}
         </div>

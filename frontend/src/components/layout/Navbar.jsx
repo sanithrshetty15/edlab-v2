@@ -3,6 +3,7 @@ import wordmark from "../../assets/images/edwins-lab-wordmark.png";
 import { navigation, site } from "../../content/labContent";
 import { Menu } from "../common/Icons";
 import MenuOverlay from "./MenuOverlay";
+import { AppLink } from "../app/Link";
 
 export default function Navbar() {
   const [open, setOpen] = useState(false);
@@ -96,6 +97,12 @@ export default function Navbar() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2">
+            <AppLink
+              to="/login"
+              className="inline-flex items-center rounded-full border border-edwins-dark/15 bg-white/70 px-3 py-2 text-[0.75rem] font-semibold text-edwins-dark transition-colors duration-300 hover:border-edwins-dark/30 hover:bg-white sm:px-4 sm:py-2.5 sm:text-[0.8125rem]"
+            >
+              Sign in
+            </AppLink>
             <button
               ref={menuButtonRef}
               type="button"

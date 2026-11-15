@@ -195,7 +195,7 @@ func (e *enrollmentTestEnv) createPendingMember(prefix string) (int64, string, s
 	suffix := e.nextSuffix()
 	value := time.Now().UnixNano() % 1000000000
 	loginID := fmt.Sprintf("%s-%s", prefix, suffix)
-	email := fmt.Sprintf("%s-%s@example.com", prefix, suffix)
+	email := fmt.Sprintf("%s-%s@gmail.com", prefix, suffix)
 	body := map[string]any{
 		"name":                  "Enrollment Test Member",
 		"login_id":              loginID,
@@ -579,7 +579,7 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 		value := time.Now().UnixNano() % 1000000000
 		suffix := env.nextSuffix()
 		roll := fmt.Sprintf("R%d", value)
-		firstYearEmail := fmt.Sprintf("first-year-%s@example.com", suffix)
+		firstYearEmail := fmt.Sprintf("first-year-%s@gmail.com", suffix)
 		body := map[string]any{
 			"name":          "First Year Member",
 			"academic_year": 1,
@@ -604,7 +604,7 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 		env.expect(recorder, http.StatusUnprocessableEntity)
 
 		usn := fmt.Sprintf("TST%d", value+1)
-		secondYearEmail := fmt.Sprintf("second-year-%s@example.com", suffix)
+		secondYearEmail := fmt.Sprintf("second-year-%s@gmail.com", suffix)
 		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
 			"name":          "Second Year Member",
 			"academic_year": 3,

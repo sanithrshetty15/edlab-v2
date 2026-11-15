@@ -113,11 +113,13 @@ export function AuthProvider({ children }) {
   }, []);
 
   const completeLogin = useCallback(async (data, fallbackUser) => {
-    if (!data?.token) {
-      throw new Error("The server did not return a session token.");
+    if (typeof data?.token !== "string" || !data.token.trim()) {
+      throw new Error(
+        "The server did not return a session token. Please try again or contact the lab team.",
+      );
     }
 
-    await tokenStore.set(data.token);
+    await tokenStore.set(data.token.trim());
 
     try {
       const me = await authApi.me();
@@ -166,7 +168,11 @@ export function AuthProvider({ children }) {
               expired: false,
             },
       );
-      return { pendingOtp: true, email };
+      return {
+        pendingOtp: true,
+        email,
+        emailStatus: data.email_status || "queued",
+      };
     },
     [],
   );
@@ -196,7 +202,8 @@ export function AuthProvider({ children }) {
 
   const logout = useCallback(async () => {
     try {
-      if (tokenStore.get()) await authApi.logout();
+      const token = await tokenStore.load();
+      if (token) await authApi.logout();
     } catch {
       // The local session is cleared even if the server is unreachable.
     } finally {

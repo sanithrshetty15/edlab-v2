@@ -59,7 +59,7 @@ export default function App() {
       return;
     }
 
-    if (isPortalPath || isRemovedPublicRoute) {
+    if (isRemovedPublicRoute) {
       navigate("/", { replace: true });
     }
   }, [isNativeApp, isPortalPath, isRemovedPublicRoute]);
@@ -78,6 +78,12 @@ export default function App() {
 
   if (isNativeApp) {
     content = <NativeApp />;
+  } else if (isPortalPath) {
+    content = (
+      <Suspense fallback={<PortalLoading />}>
+        <AppPortal />
+      </Suspense>
+    );
   } else if (isExplore) {
     content = <ExplorePage />;
   } else {

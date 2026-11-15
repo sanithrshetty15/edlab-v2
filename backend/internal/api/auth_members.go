@@ -8,6 +8,7 @@ import (
 
 func (s *Server) registerAuthRoutes(api *gin.RouterGroup) {
 	auth := api.Group("/auth")
+	auth.Use(noStore)
 	auth.POST("/member-login", s.RateLimit("member-login", 20, 5*time.Minute), s.memberLogin)
 	auth.POST("/admin-login", s.RateLimit("admin-login", 20, 5*time.Minute), s.adminLogin)
 	auth.POST("/admin-verify-otp", s.RateLimit("admin-verify-otp", 20, 5*time.Minute), s.verifyAdminOTP)
