@@ -92,6 +92,21 @@ type Session struct {
 	UpdatedAt    time.Time  `json:"updated_at"`
 }
 
+// OAuthLoginHandoff is a short-lived, single-use code used to transfer an
+// OAuth-authenticated login from the API callback to the web client.
+type OAuthLoginHandoff struct {
+	ID         int64      `gorm:"primaryKey" json:"-"`
+	CodeDigest string     `gorm:"not null;uniqueIndex" json:"-"`
+	UserID     int64      `gorm:"not null;index" json:"-"`
+	ExpiresAt  time.Time  `gorm:"not null" json:"-"`
+	UsedAt     *time.Time `json:"-"`
+	CreatedAt  time.Time  `json:"-"`
+}
+
+func (OAuthLoginHandoff) TableName() string {
+	return "oauth_login_handoffs"
+}
+
 // OTPCode represents a one-time password for verification
 type OTPCode struct {
 	ID             int64     `gorm:"primaryKey" json:"-"`

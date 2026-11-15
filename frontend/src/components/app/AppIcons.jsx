@@ -223,6 +223,35 @@ export function LockIcon(props) {
   );
 }
 
+export function GoogleIcon({ className = "h-5 w-5", ...props }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      aria-hidden="true"
+      focusable="false"
+      {...props}
+    >
+      <path
+        fill="#4285F4"
+        d="M21.35 12.27c0-.79-.07-1.55-.2-2.27H12v4.51h5.24a4.48 4.48 0 0 1-1.94 2.93v2.44h3.14c1.84-1.69 2.91-4.18 2.91-7.61Z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 21.75c2.61 0 4.8-.86 6.4-2.34l-3.14-2.44c-.87.58-1.98.93-3.26.93-2.51 0-4.64-1.69-5.4-3.97H3.36v2.52A9.66 9.66 0 0 0 12 21.75Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M6.6 13.93a5.8 5.8 0 0 1 0-3.7V7.71H3.36a9.66 9.66 0 0 0 0 8.74L6.6 13.93Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 6.26c1.42 0 2.7.49 3.7 1.45l2.78-2.78C16.8 3.37 14.61 2.5 12 2.5a9.66 9.66 0 0 0-8.64 5.21L6.6 10.23c.76-2.28 2.89-3.97 5.4-3.97Z"
+      />
+    </svg>
+  );
+}
+
 export function MailIcon(props) {
   return (
     <Icon {...props}>

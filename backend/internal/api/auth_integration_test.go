@@ -77,13 +77,14 @@ func newAuthTestEnv(t *testing.T) *authTestEnv {
 	}
 	manager := jobs.New(&cfg, dbHandler.DB, logger)
 	server := &Server{
-		DB:       dbHandler.DB,
-		Config:   cfg,
-		Log:      logger,
-		Security: security.New(cfg.JWTSecret, cfg.SessionSecret),
-		Mailer:   mail,
-		Jobs:     manager,
-		Limiter:  ratelimit.New(),
+		DB:          dbHandler.DB,
+		Config:      cfg,
+		Log:         logger,
+		Security:    security.New(cfg.JWTSecret, cfg.SessionSecret),
+		Mailer:      mail,
+		Jobs:        manager,
+		Limiter:     ratelimit.New(),
+		GoogleLogin: newGoogleLoginService(cfg),
 	}
 	server.registerJobHandlers()
 

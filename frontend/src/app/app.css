@@ -2247,6 +2247,51 @@ body.password-mode::selection {
   margin-top: 0.15rem;
 }
 
+.login-provider-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--lab-faint);
+  font-size: 0.58rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+
+.login-provider-divider::before,
+.login-provider-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--lab-line);
+}
+
+.login-google-button {
+  width: 100%;
+  background: #fff;
+  border-color: rgba(255, 255, 255, 0.9);
+  color: #202124;
+  text-decoration: none;
+}
+
+.login-google-button:hover {
+  background: #f4f5f7;
+  border-color: #fff;
+  color: #202124;
+}
+
+.login-google-button--disabled {
+  pointer-events: none;
+  opacity: 0.52;
+}
+
+.login-google-note {
+  margin: -0.15rem 0 0;
+  color: var(--lab-faint);
+  font-size: 0.57rem;
+  line-height: 1.55;
+  text-align: center;
+}
+
 .login-help,
 .login-legal {
   margin: 1.15rem 0 0;

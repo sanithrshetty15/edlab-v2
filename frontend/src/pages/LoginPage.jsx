@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import wordmarkLight from "../assets/images/edwins-lab-wordmark-light.png";
-import { isApiConfigured } from "../api/client";
+import { getApiBaseUrl, isApiConfigured } from "../api/client";
 import { useAuth } from "../auth/context";
 import { AppLink } from "../components/app/Link";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
+  GoogleIcon,
   LockIcon,
   MailIcon,
   ShieldIcon,
@@ -59,21 +60,85 @@ function formatCountdown(seconds) {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
+function readGoogleCallbackParams() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("google_code");
+  const error = params.get("google_error");
+  if (!code && !error) return null;
+  return { code: code || "", error: error || "" };
+}
+
+function googleLoginErrorMessage(code) {
+  switch (code) {
+    case "access_denied":
+      return "Google sign-in was cancelled. Try again or use an email verification code.";
+    case "not_authorized":
+      return "This Google account does not have administrator access. Use an authorized administrator account.";
+    case "invalid_state":
+      return "Google sign-in expired before it completed. Please try again.";
+    case "invalid_token":
+      return "Google could not verify that account. Please try again.";
+    case "not_configured":
+      return "Google sign-in is not configured yet. Use an email verification code.";
+    default:
+      return "Google sign-in could not be completed. Please try again.";
+  }
+}
+
 export default function LoginPage({ sessionError, expired = false }) {
   const auth = useAuth();
-  const [mode, setMode] = useState("member");
+  const { completeGoogleLogin } = auth;
+  const [googleCallback] = useState(readGoogleCallbackParams);
+  const [mode, setMode] = useState(() => (googleCallback ? "admin" : "member"));
   const [loginType, setLoginType] = useState("usn");
   const [loginId, setLoginId] = useState("");
   const [email, setEmail] = useState("");
   const [otp, setOtp] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
-  const [formError, setFormError] = useState(null);
+  const [formError, setFormError] = useState(() =>
+    googleCallback?.error ? new Error(googleLoginErrorMessage(googleCallback.error)) : null,
+  );
   const [statusMessage, setStatusMessage] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  const [googleCompleting, setGoogleCompleting] = useState(() =>
+    Boolean(googleCallback?.code && !googleCallback?.error),
+  );
+  const [submitting, setSubmitting] = useState(() =>
+    Boolean(googleCallback?.code && !googleCallback?.error),
+  );
   const [adminLoginInitiated, setAdminLoginInitiated] = useState(false);
   const [emailStatus, setEmailStatus] = useState("queued");
   const [resendSeconds, setResendSeconds] = useState(0);
+  const googleCallbackHandled = useRef(false);
+
+  useEffect(() => {
+    if (!googleCallback || googleCallbackHandled.current) return;
+    googleCallbackHandled.current = true;
+
+    const cleanUrl = new URL(window.location.href);
+    cleanUrl.searchParams.delete("google_code");
+    cleanUrl.searchParams.delete("google_error");
+    window.history.replaceState({}, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+
+    if (googleCallback.error) return;
+
+    completeGoogleLogin(googleCallback.code)
+      .then((result) => {
+        if (!result?.user) {
+          throw new Error("The server did not complete the admin session.");
+        }
+        if (result.mustChangePassword) {
+          navigate("/app/change-password", { replace: true });
+        } else {
+          navigate("/app/dashboard", { replace: true });
+        }
+      })
+      .catch((error) => setFormError(error))
+      .finally(() => {
+        setGoogleCompleting(false);
+        setSubmitting(false);
+      });
+  }, [completeGoogleLogin, googleCallback]);
 
   useEffect(() => {
     document.title = "Sign in — Edwins Lab";
@@ -376,7 +441,8 @@ export default function LoginPage({ sessionError, expired = false }) {
                 <h2>Sign in to your account</h2>
                 <p>
                   Members sign in with their lab login ID and password. Administrators
-                  receive a one-time verification code by email.
+                  can use a one-time verification code by email or an authorized Google
+                  account.
                 </p>
               </header>
 
@@ -409,6 +475,12 @@ export default function LoginPage({ sessionError, expired = false }) {
                       ))}
                     </ul>
                   )}
+                </Alert>
+              )}
+
+              {googleCompleting && (
+                <Alert tone="info" title="Completing Google sign-in">
+                  <p>Verifying your Google account and creating your admin session.</p>
                 </Alert>
               )}
 
@@ -479,31 +551,58 @@ export default function LoginPage({ sessionError, expired = false }) {
                     />
                   </>
                 ) : (
-                  <Field
-                    label="Admin email"
-                    htmlFor="admin-email"
-                    error={errors.email}
-                    hint="We will email a 4-digit verification code to this address."
-                    required
-                  >
-                    <div className="lab-input-wrap">
-                      <MailIcon className="lab-input-icon" />
-                      <TextInput
-                        id="admin-email"
-                        type="email"
-                        className={`lab-input--with-icon ${
-                          errors.email ? "lab-input--invalid" : ""
-                        }`}
-                        value={email}
-                        onChange={(event) => setEmail(event.target.value)}
-                        placeholder="name@edwinslab.org"
-                        autoComplete="username"
-                        spellCheck="false"
-                        aria-invalid={errors.email ? "true" : undefined}
-                        disabled={submitting}
-                      />
-                    </div>
-                  </Field>
+                  <>
+                    <Field
+                      label="Admin email"
+                      htmlFor="admin-email"
+                      error={errors.email}
+                      hint="We will email a 4-digit verification code to this address."
+                      required
+                    >
+                      <div className="lab-input-wrap">
+                        <MailIcon className="lab-input-icon" />
+                        <TextInput
+                          id="admin-email"
+                          type="email"
+                          className={`lab-input--with-icon ${
+                            errors.email ? "lab-input--invalid" : ""
+                          }`}
+                          value={email}
+                          onChange={(event) => setEmail(event.target.value)}
+                          placeholder="name@edwinslab.org"
+                          autoComplete="username"
+                          spellCheck="false"
+                          aria-invalid={errors.email ? "true" : undefined}
+                          disabled={submitting}
+                        />
+                      </div>
+                    </Field>
+
+                    {isApiConfigured() && (
+                      <>
+                        <div className="login-provider-divider" aria-hidden="true">
+                          <span>or</span>
+                        </div>
+                        <a
+                          className={`lab-button lab-button--outline lab-button--lg login-google-button ${
+                            submitting ? "login-google-button--disabled" : ""
+                          }`}
+                          href={`${getApiBaseUrl()}/oauth/google/start`}
+                          aria-disabled={submitting || undefined}
+                          tabIndex={submitting ? -1 : undefined}
+                          onClick={(event) => {
+                            if (submitting) event.preventDefault();
+                          }}
+                        >
+                          <GoogleIcon className="h-4 w-4" />
+                          Continue with Google
+                        </a>
+                        <p className="login-google-note">
+                          Only existing Edwins Lab administrators can use Google sign-in.
+                        </p>
+                      </>
+                    )}
+                  </>
                 )}
 
                 <div className="login-form__meta">
@@ -523,9 +622,11 @@ export default function LoginPage({ sessionError, expired = false }) {
                   disabled={submitting}
                 >
                   {submitting
-                    ? mode === "admin"
-                      ? "Requesting code…"
-                      : "Signing in…"
+                    ? googleCompleting
+                      ? "Completing Google sign-in…"
+                      : mode === "admin"
+                        ? "Requesting code…"
+                        : "Signing in…"
                     : mode === "admin"
                       ? "Send verification code"
                       : "Sign in"}

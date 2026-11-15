@@ -200,6 +200,23 @@ export function AuthProvider({ children }) {
     [completeLogin, state.pendingAdminOtp?.email],
   );
 
+  const completeGoogleLogin = useCallback(
+    async (code) => {
+      const data = await authApi.exchangeGoogleLogin({ code });
+      const fallbackUser = data?.admin
+        ? {
+            id: data.admin.id,
+            email: data.admin.email,
+            role: "admin",
+            admin: data.admin,
+          }
+        : { role: "admin", email: "" };
+
+      return completeLogin(data, fallbackUser);
+    },
+    [completeLogin],
+  );
+
   const logout = useCallback(async () => {
     try {
       const token = await tokenStore.load();
@@ -237,6 +254,7 @@ export function AuthProvider({ children }) {
       loginMember,
       loginAdmin,
       verifyAndCompleteAdminLogin,
+      completeGoogleLogin,
       logout,
       changePassword,
       refreshUser,
@@ -246,6 +264,7 @@ export function AuthProvider({ children }) {
     loginMember,
     loginAdmin,
     verifyAndCompleteAdminLogin,
+    completeGoogleLogin,
     logout,
     changePassword,
     refreshUser,

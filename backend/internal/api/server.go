@@ -17,24 +17,26 @@ import (
 )
 
 type Server struct {
-	DB       *gorm.DB
-	Config   config.Config
-	Log      *slog.Logger
-	Security *security.Manager
-	Mailer   *mailer.Mailer
-	Jobs     *jobs.Manager
-	Limiter  *ratelimit.Limiter
+	DB          *gorm.DB
+	Config      config.Config
+	Log         *slog.Logger
+	Security    *security.Manager
+	Mailer      *mailer.Mailer
+	Jobs        *jobs.Manager
+	Limiter     *ratelimit.Limiter
+	GoogleLogin *googleLoginService
 }
 
 func New(db *gorm.DB, cfg config.Config, log *slog.Logger, mail *mailer.Mailer, jobManager *jobs.Manager) *Server {
 	server := &Server{
-		DB:       db,
-		Config:   cfg,
-		Log:      log,
-		Security: security.New(cfg.JWTSecret, cfg.SessionSecret),
-		Mailer:   mail,
-		Jobs:     jobManager,
-		Limiter:  ratelimit.New(),
+		DB:          db,
+		Config:      cfg,
+		Log:         log,
+		Security:    security.New(cfg.JWTSecret, cfg.SessionSecret),
+		Mailer:      mail,
+		Jobs:        jobManager,
+		Limiter:     ratelimit.New(),
+		GoogleLogin: newGoogleLoginService(cfg),
 	}
 	server.registerJobHandlers()
 	return server
@@ -53,6 +55,7 @@ func (s *Server) Router() *gin.Engine {
 	api.GET("/health", s.health)
 
 	s.registerAuthRoutes(api)
+	s.registerGoogleLoginRoutes(api)
 	s.registerDeviceRoutes(api)
 	s.registerMemberRoutes(api)
 	s.registerAdminRoutes(api)

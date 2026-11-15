@@ -88,6 +88,31 @@ func noStore(c *gin.Context) {
 	c.Next()
 }
 
+func (s *Server) respondAdminSession(c *gin.Context, user *models.User, admin *models.Admin, details any) {
+	token, session, err := s.createSession(c, user)
+	if err != nil {
+		s.Log.Error("admin session creation failed", "user_id", user.ID, "error", err)
+		fail(c, http.StatusInternalServerError, "Unable to sign in")
+		return
+	}
+
+	s.audit(c, "admin_login", "User", &user.ID, details)
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"message":    "Admin login successful",
+		"token":      token,
+		"token_type": "Bearer",
+		"expires_at": sessionExpiry(session),
+		"admin": gin.H{
+			"id":         admin.ID,
+			"name":       admin.Name,
+			"email":      user.Email,
+			"is_primary": admin.IsPrimary,
+		},
+	})
+}
+
 func (s *Server) memberLogin(c *gin.Context) {
 	var request memberLoginRequest
 	if !bindJSON(c, &request) {
@@ -631,34 +656,13 @@ func (s *Server) verifyAdminOTP(c *gin.Context) {
 		return
 	}
 
-	token, session, err := s.createSession(c, &user)
-	if err != nil {
-		s.Log.Error("admin session creation failed", "error", err)
-		fail(c, http.StatusInternalServerError, "Unable to sign in")
-		return
-	}
-
 	var admin models.Admin
 	if err := s.DB.WithContext(ctx).Where("user_id = ?", user.ID).First(&admin).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "Unable to retrieve admin profile")
 		return
 	}
 
-	s.audit(c, "admin_login", "User", &user.ID, nil)
-
-	c.JSON(http.StatusOK, gin.H{
-		"success":    true,
-		"message":    "Admin login successful",
-		"token":      token,
-		"token_type": "Bearer",
-		"expires_at": sessionExpiry(session),
-		"admin": gin.H{
-			"id":         admin.ID,
-			"name":       admin.Name,
-			"email":      user.Email,
-			"is_primary": admin.IsPrimary,
-		},
-	})
+	s.respondAdminSession(c, &user, &admin, nil)
 }
 
 func normalizedPhone(value string) (string, bool) {

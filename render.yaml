@@ -42,6 +42,12 @@ services:
         sync: false
       - key: MAILER_FROM
         value: Edwins Lab <edwin.lab.aiet@gmail.com>
+      - key: GOOGLE_LOGIN_CLIENT_ID
+        sync: false
+      - key: GOOGLE_LOGIN_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_LOGIN_REDIRECT_URL
+        value: https://edwinslab.onrender.com/api/v1/oauth/google/callback
       - key: RATE_LIMIT_REQUESTS
         value: 100
       - key: RATE_LIMIT_PERIOD_SECONDS

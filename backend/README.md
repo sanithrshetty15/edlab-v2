@@ -120,6 +120,19 @@ Example: `postgres://user:password@host:5432/edwinslab?sslmode=require`
 | `GMAIL_USERNAME` / `GMAIL_APP_PASSWORD` | Gmail SMTP sender; use `edwin.lab.aiet@gmail.com` and a Gmail App Password |
 | `MAILER_FROM` | From header; defaults from `GMAIL_USERNAME` or `Edwins Lab <edwin.lab.aiet@gmail.com>` |
 
+### Administrator Google Sign-In
+
+| Variable | Notes |
+|---|---|
+| `GOOGLE_LOGIN_CLIENT_ID` | Google OAuth 2.0 **Web application** client used only for admin sign-in |
+| `GOOGLE_LOGIN_CLIENT_SECRET` | Secret for the admin sign-in client |
+| `GOOGLE_LOGIN_REDIRECT_URL` | Must exactly match the authorized redirect URI: `https://edwinslab.onrender.com/api/v1/oauth/google/callback` in production |
+
+This client requests `openid`, `email`, and `profile`. It is separate from
+Gmail API sending credentials and must not be reused for Gmail sending. Google
+sign-in only matches verified emails to existing active administrator rows;
+it never creates accounts or grants access by email domain.
+
 ### OTP and sessions
 
 `OTP_EXPIRY_SECONDS` (300), `OTP_MAX_ATTEMPTS` (5), `OTP_REQUEST_WINDOW_SECONDS` (900), `OTP_MAX_REQUESTS` (5), `OTP_TEST_RECIPIENT`, `SESSION_TTL_SECONDS` (86400), `ADMIN_SESSION_TTL_SECONDS` (86400).
@@ -282,6 +295,7 @@ members screen.
 
 - `GET /health`, `GET /up`, `GET /api/v1/health` — liveness/readiness
 - `POST /api/v1/auth/...` — member/admin login, logout, session refresh, password reset
+- `GET /api/v1/oauth/google/start`, `GET /api/v1/oauth/google/callback`, `POST /api/v1/oauth/google/exchange` — admin Google Sign-In
 - `/api/v1/members`, `/api/v1/members-management`, `/api/v1/admins` — member and admin management
 - `/api/v1/attendance` — attendance list, today, summary, analytics, manual entry, logout
 - `/api/v1/biometric` — device authentication, two-scan fingerprint enrollment sessions, synchronous door authorization, status, event submission/sync

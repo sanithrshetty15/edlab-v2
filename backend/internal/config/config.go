@@ -14,30 +14,33 @@ import (
 )
 
 type Config struct {
-	AppEnv             string
-	Port               string
-	DatabaseURL        string
-	JWTSecret          string
-	SessionSecret      string
-	FrontendURL        string
-	CORSAllowedOrigins []string
-	SessionTTLMember   time.Duration
-	SessionTTLAdmin    time.Duration
-	OTPExpiry          time.Duration
-	OTPMaxAttempts     int
-	OTPRequestWindow   time.Duration
-	OTPMaxRequests     int
-	OTPTestRecipient   string
-	MailerFrom         string
-	SMTPHost           string
-	SMTPPort           string
-	UploadDir          string
-	MaxUploadBytes     int64
-	RateLimitRequests  int
-	RateLimitPeriod    time.Duration
-	DeviceHMACSecret   string
-	BootstrapReset     bool
-	Timezone           string
+	AppEnv                 string
+	Port                   string
+	DatabaseURL            string
+	JWTSecret              string
+	SessionSecret          string
+	FrontendURL            string
+	CORSAllowedOrigins     []string
+	SessionTTLMember       time.Duration
+	SessionTTLAdmin        time.Duration
+	OTPExpiry              time.Duration
+	OTPMaxAttempts         int
+	OTPRequestWindow       time.Duration
+	OTPMaxRequests         int
+	OTPTestRecipient       string
+	MailerFrom             string
+	SMTPHost               string
+	SMTPPort               string
+	GoogleLoginClientID    string
+	GoogleLoginSecret      string
+	GoogleLoginRedirectURL string
+	UploadDir              string
+	MaxUploadBytes         int64
+	RateLimitRequests      int
+	RateLimitPeriod        time.Duration
+	DeviceHMACSecret       string
+	BootstrapReset         bool
+	Timezone               string
 }
 
 func LoadConfig() (Config, error) {
@@ -46,30 +49,33 @@ func LoadConfig() (Config, error) {
 	}
 
 	cfg := Config{
-		AppEnv:             getEnv("APP_ENV", "development"),
-		Port:               getEnv("PORT", "8080"),
-		DatabaseURL:        getEnv("DATABASE_URL", ""),
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		SessionSecret:      getEnv("SESSION_SECRET", ""),
-		FrontendURL:        getEnv("FRONTEND_URL", "http://localhost:5173"),
-		CORSAllowedOrigins: parseList(getEnv("CORS_ALLOWED_ORIGINS", getEnv("CORS_ORIGINS", ""))),
-		SessionTTLMember:   durationEnv("SESSION_TTL_SECONDS", 24*time.Hour),
-		SessionTTLAdmin:    durationEnv("ADMIN_SESSION_TTL_SECONDS", durationEnv("SESSION_TTL_SECONDS", 24*time.Hour)),
-		OTPExpiry:          otpExpiryEnv(),
-		OTPMaxAttempts:     intEnv("OTP_MAX_ATTEMPTS", 5),
-		OTPRequestWindow:   durationEnv("OTP_REQUEST_WINDOW_SECONDS", 15*time.Minute),
-		OTPMaxRequests:     intEnv("OTP_MAX_REQUESTS", 5),
-		OTPTestRecipient:   strings.TrimSpace(os.Getenv("OTP_TEST_RECIPIENT")),
-		MailerFrom:         getEnv("MAILER_FROM", ""),
-		SMTPHost:           getEnv("SMTP_HOST", "smtp.gmail.com"),
-		SMTPPort:           getEnv("SMTP_PORT", "587"),
-		UploadDir:          getEnv("UPLOAD_DIR", "data/uploads"),
-		MaxUploadBytes:     int64(intEnv("MAX_UPLOAD_BYTES", 20*1024*1024)),
-		RateLimitRequests:  intEnv("RATE_LIMIT_REQUESTS", 100),
-		RateLimitPeriod:    durationEnv("RATE_LIMIT_PERIOD_SECONDS", time.Minute),
-		DeviceHMACSecret:   getEnv("BIOMETRIC_API_SECRET", ""),
-		BootstrapReset:     boolEnv("ADMIN_BOOTSTRAP_RESET_PASSWORDS", false),
-		Timezone:           getEnv("APP_TIMEZONE", "Asia/Kolkata"),
+		AppEnv:                 getEnv("APP_ENV", "development"),
+		Port:                   getEnv("PORT", "8080"),
+		DatabaseURL:            getEnv("DATABASE_URL", ""),
+		JWTSecret:              getEnv("JWT_SECRET", ""),
+		SessionSecret:          getEnv("SESSION_SECRET", ""),
+		FrontendURL:            getEnv("FRONTEND_URL", "http://localhost:5173"),
+		CORSAllowedOrigins:     parseList(getEnv("CORS_ALLOWED_ORIGINS", getEnv("CORS_ORIGINS", ""))),
+		SessionTTLMember:       durationEnv("SESSION_TTL_SECONDS", 24*time.Hour),
+		SessionTTLAdmin:        durationEnv("ADMIN_SESSION_TTL_SECONDS", durationEnv("SESSION_TTL_SECONDS", 24*time.Hour)),
+		OTPExpiry:              otpExpiryEnv(),
+		OTPMaxAttempts:         intEnv("OTP_MAX_ATTEMPTS", 5),
+		OTPRequestWindow:       durationEnv("OTP_REQUEST_WINDOW_SECONDS", 15*time.Minute),
+		OTPMaxRequests:         intEnv("OTP_MAX_REQUESTS", 5),
+		OTPTestRecipient:       strings.TrimSpace(os.Getenv("OTP_TEST_RECIPIENT")),
+		MailerFrom:             getEnv("MAILER_FROM", ""),
+		SMTPHost:               getEnv("SMTP_HOST", "smtp.gmail.com"),
+		SMTPPort:               getEnv("SMTP_PORT", "587"),
+		GoogleLoginClientID:    getEnv("GOOGLE_LOGIN_CLIENT_ID", ""),
+		GoogleLoginSecret:      getEnv("GOOGLE_LOGIN_CLIENT_SECRET", ""),
+		GoogleLoginRedirectURL: getEnv("GOOGLE_LOGIN_REDIRECT_URL", ""),
+		UploadDir:              getEnv("UPLOAD_DIR", "data/uploads"),
+		MaxUploadBytes:         int64(intEnv("MAX_UPLOAD_BYTES", 20*1024*1024)),
+		RateLimitRequests:      intEnv("RATE_LIMIT_REQUESTS", 100),
+		RateLimitPeriod:        durationEnv("RATE_LIMIT_PERIOD_SECONDS", time.Minute),
+		DeviceHMACSecret:       getEnv("BIOMETRIC_API_SECRET", ""),
+		BootstrapReset:         boolEnv("ADMIN_BOOTSTRAP_RESET_PASSWORDS", false),
+		Timezone:               getEnv("APP_TIMEZONE", "Asia/Kolkata"),
 	}
 
 	if cfg.AppEnv == "production" {
