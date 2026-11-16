@@ -204,6 +204,7 @@ func (e *enrollmentTestEnv) createPendingMember(prefix string) (int64, string, s
 		"password":              "password123",
 		"password_confirmation": "password123",
 		"academic_year":         2,
+		"identifier_type":       "usn",
 		"usn":                   fmt.Sprintf("TST%d", value),
 		"branch":                "Computer Science",
 	}
@@ -628,5 +629,123 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 			"email":         "not-an-email",
 		})
 		env.expect(recorder, http.StatusUnprocessableEntity)
+	})
+
+	t.Run("identifier selection registers either USN or roll number and survives enrollment", func(t *testing.T) {
+		value := time.Now().UnixNano() % 1000000000
+		suffix := env.nextSuffix()
+		usn := fmt.Sprintf("USN%d", value)
+		roll := fmt.Sprintf("R%d", value+1)
+
+		recorder := env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":            "First Year USN Member",
+			"academic_year":   1,
+			"identifier_type": "usn",
+			"usn":             usn,
+			"email":           fmt.Sprintf("usn-first-year-%s@gmail.com", suffix),
+		})
+		env.expect(recorder, http.StatusCreated)
+		var usnResponse enrollmentTestResponse
+		env.decode(recorder, &usnResponse)
+		if usnResponse.Member.LoginID != usn {
+			t.Fatalf("generated login ID = %q, want USN %q", usnResponse.Member.LoginID, usn)
+		}
+		if usnResponse.Member.USN == nil || *usnResponse.Member.USN != usn {
+			t.Fatalf("unexpected USN identity: %s", recorder.Body.String())
+		}
+		if usnResponse.Member.RollNumber != nil {
+			t.Fatalf("USN registration also stored a roll number: %s", recorder.Body.String())
+		}
+
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":            "Third Year Roll Member",
+			"academic_year":   3,
+			"identifier_type": "roll_number",
+			"roll_number":     roll,
+			"email":           fmt.Sprintf("roll-third-year-%s@gmail.com", suffix),
+		})
+		env.expect(recorder, http.StatusCreated)
+		var rollResponse enrollmentTestResponse
+		env.decode(recorder, &rollResponse)
+		if rollResponse.Member.LoginID != roll {
+			t.Fatalf("generated login ID = %q, want roll number %q", rollResponse.Member.LoginID, roll)
+		}
+		if rollResponse.Member.RollNumber == nil || *rollResponse.Member.RollNumber != roll {
+			t.Fatalf("unexpected roll number identity: %s", recorder.Body.String())
+		}
+		if rollResponse.Member.USN != nil {
+			t.Fatalf("roll number registration also stored a USN: %s", recorder.Body.String())
+		}
+
+		duplicateUSN := map[string]any{
+			"name":            "Duplicate USN Member",
+			"academic_year":   2,
+			"identifier_type": "usn",
+			"usn":             usn,
+			"email":           fmt.Sprintf("duplicate-usn-%s@gmail.com", suffix),
+		}
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", duplicateUSN)
+		env.expect(recorder, http.StatusUnprocessableEntity)
+
+		duplicateRoll := map[string]any{
+			"name":            "Duplicate Roll Member",
+			"academic_year":   2,
+			"identifier_type": "roll_number",
+			"roll_number":     roll,
+			"email":           fmt.Sprintf("duplicate-roll-%s@gmail.com", suffix),
+		}
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", duplicateRoll)
+		env.expect(recorder, http.StatusUnprocessableEntity)
+
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":            "Missing Identifier Value",
+			"academic_year":   2,
+			"identifier_type": "usn",
+			"email":           fmt.Sprintf("missing-value-%s@gmail.com", suffix),
+		})
+		env.expect(recorder, http.StatusUnprocessableEntity)
+
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":          "Missing Identifier Type",
+			"academic_year": 2,
+			"email":         fmt.Sprintf("missing-type-%s@gmail.com", suffix),
+		})
+		env.expect(recorder, http.StatusUnprocessableEntity)
+
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":            "Fifth Year Member",
+			"academic_year":   5,
+			"identifier_type": "usn",
+			"usn":             fmt.Sprintf("USN%d", value+4),
+			"email":           fmt.Sprintf("fifth-year-%s@gmail.com", suffix),
+		})
+		env.expect(recorder, http.StatusUnprocessableEntity)
+
+		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", map[string]any{
+			"name":            "Both Identifiers Member",
+			"academic_year":   2,
+			"identifier_type": "usn",
+			"usn":             fmt.Sprintf("USN%d", value+2),
+			"roll_number":     fmt.Sprintf("R%d", value+3),
+			"email":           fmt.Sprintf("both-identifiers-%s@gmail.com", suffix),
+		})
+		env.expect(recorder, http.StatusUnprocessableEntity)
+
+		session := env.startEnrollment(rollResponse.Member.ID, "login")
+		slot := 13
+		env.progress(session.SessionUID, enrollmentStatusVerifying, &slot, "", "")
+		recorder = env.complete(session.SessionUID, slot)
+		env.expect(recorder, http.StatusOK)
+
+		member := env.loadMember(rollResponse.Member.ID)
+		if member.Status != "active" {
+			t.Fatalf("member status after enrollment = %q, want active", member.Status)
+		}
+		if member.RollNumber == nil || *member.RollNumber != roll || member.USN != nil {
+			t.Fatalf("roll number identity changed during enrollment: %+v", member)
+		}
+		if member.LoginID != roll {
+			t.Fatalf("login ID after enrollment = %q, want %q", member.LoginID, roll)
+		}
 	})
 }

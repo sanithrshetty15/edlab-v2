@@ -257,13 +257,16 @@ Security notes:
 
 ### Member fingerprint enrollment
 
-Creating a member through `POST /api/v1/members-management` now requires a
-name, academic year, Gmail address, and either a roll number (first year) or
-USN (second year and above). It creates an inactive `pending_enrollment` member
-and a `pending_details` session; it does not activate the member. The login ID
-is derived from the roll number or USN, and a temporary password is generated
-when one is not supplied. An administrator then starts fingerprint enrollment
-on the single entry reader:
+Creating a member through `POST /api/v1/members-management` requires a name,
+academic year (1-4), Gmail address, and exactly one identifier selected with
+`identifier_type` (`usn` or `roll_number`) plus the matching `usn` or
+`roll_number` field. Either identifier can be used for any academic year; both
+fields are never accepted together. Legacy callers may omit `identifier_type`
+when exactly one identifier field is supplied. It creates an inactive
+`pending_enrollment` member and a `pending_details` session; it does not
+activate the member. The login ID is derived from the selected identifier, and
+a temporary password is generated when one is not supplied. An administrator
+then starts fingerprint enrollment on the single entry reader:
 
 | Endpoint | Method | Purpose |
 |---|---|---|

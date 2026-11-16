@@ -54,6 +54,8 @@ unsigned long doorOpenedAt = 0;
 unsigned long alarmUntil = 0;
 
 unsigned long lastLoginScan = 0;
+unsigned long lastLoginScanLog = 0;
+const unsigned long LOGIN_SCAN_LOG_INTERVAL = 2000UL;
 unsigned long lastHeartbeat = 0;
 unsigned long lastAuthAttempt = 0;
 unsigned long lastEnrollmentRefresh = 0;
@@ -214,7 +216,7 @@ void refreshEnrollmentsIfDue(bool force) {
   if (!force && millis() - lastEnrollmentRefresh < HEARTBEAT_INTERVAL) {
     return;
   }
-  EnrollmentInfo fresh[MAX_ENROLLMENTS];
+  static EnrollmentInfo fresh[MAX_ENROLLMENTS];
   size_t count = 0;
   if (!fetchEnrollments(fresh, MAX_ENROLLMENTS, count)) {
     return;
@@ -225,7 +227,12 @@ void refreshEnrollmentsIfDue(bool force) {
   enrollmentCount = count;
   lastEnrollmentRefresh = millis();
   Serial.print("Cached enrollments: ");
-  Serial.println(static_cast<unsigned>(count));
+  Serial.print(static_cast<unsigned>(count));
+  Serial.print(", free heap: ");
+  Serial.print(ESP.getFreeHeap());
+  Serial.print(", stack headroom: ");
+  Serial.print(static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
+  Serial.println(" bytes");
 }
 
 bool slotIsFree(uint16_t slot, bool& freeSlot) {
@@ -391,8 +398,41 @@ void reportReaderIfDue(bool force) {
 // Fingerprint scanning
 // ---------------------------------------------------------------------------
 
+void logLoginScanIssue(const char* message, uint8_t confirmation) {
+  unsigned long now = millis();
+  if (now - lastLoginScanLog < LOGIN_SCAN_LOG_INTERVAL) {
+    return;
+  }
+  lastLoginScanLog = now;
+  Serial.print("Login scan: ");
+  Serial.print(message);
+  Serial.print(" (confirmation 0x");
+  Serial.print(confirmation, HEX);
+  Serial.println(")");
+}
+
 bool scanFingerprintReader(R307S& reader, uint16_t& slot) {
-  return reader.search(slot);
+  slot = 0;
+  if (!reader.getImage(nullptr)) {
+    uint8_t confirmation = reader.lastConfirmation();
+    if (confirmation != R307S_ERR_NOFINGER) {
+      logLoginScanIssue("image capture failed", confirmation);
+    }
+    return false;
+  }
+  if (!reader.img2tz(static_cast<uint8_t>(1))) {
+    logLoginScanIssue("image conversion failed", reader.lastConfirmation());
+    return false;
+  }
+  if (!reader.search(slot)) {
+    if (reader.lastConfirmation() == R307S_ERR_NOTFOUND) {
+      logLoginScanIssue("unregistered fingerprint", R307S_ERR_NOTFOUND);
+    } else {
+      logLoginScanIssue("template search failed", reader.lastConfirmation());
+    }
+    return false;
+  }
+  return true;
 }
 
 void recordLoginScan() {
@@ -400,10 +440,14 @@ void recordLoginScan() {
   if (!scanFingerprintReader(entryReader, slot)) {
     return;
   }
-  if (millis() - lastLoginScan < SCAN_DEBOUNCE_MS) {
+  unsigned long now = millis();
+  if (now - lastLoginScan < SCAN_DEBOUNCE_MS) {
     return;
   }
-  lastLoginScan = millis();
+  lastLoginScan = now;
+
+  Serial.print("Fingerprint matched slot ");
+  Serial.println(static_cast<unsigned>(slot));
 
   if (!isDeviceAuthenticated()) {
     errorSignal();
@@ -1019,6 +1063,7 @@ void setup() {
 
   wifiBegin();
   Serial.println("Wi-Fi connection started");
+  lastAuthAttempt = millis() - AUTH_RETRY_INTERVAL;
 }
 
 void loop() {
@@ -1038,11 +1083,13 @@ void loop() {
   if (!isDeviceAuthenticated()) {
     if (millis() - lastAuthAttempt >= AUTH_RETRY_INTERVAL) {
       lastAuthAttempt = millis();
+      Serial.println("Attempting backend device authentication...");
       if (authenticateDevice()) {
         reportReaderIfDue(true);
         refreshEnrollmentsIfDue(true);
         successSignal();
       }
+      
     }
     delay(5);
     return;

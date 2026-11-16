@@ -18,6 +18,7 @@ import {
   Pagination,
   Panel,
   Select,
+  SegmentedControl,
   StatusBadge,
   TextInput,
 } from "../../../components/app/Ui";
@@ -48,6 +49,13 @@ const STATUS_OPTIONS = [
   { value: "deactivated", label: "Deactivated" },
 ];
 
+const IDENTIFIER_TYPE_OPTIONS = [
+  { value: "usn", label: "USN" },
+  { value: "roll_number", label: "Roll Number" },
+];
+
+const REGISTRATION_ACADEMIC_YEARS = [1, 2, 3, 4];
+
 function EditMemberDialog({ member, onClose, onSaved }) {
   const [name, setName] = useState(member.name || "");
   const [usn, setUsn] = useState(member.usn || "");
@@ -59,7 +67,6 @@ function EditMemberDialog({ member, onClose, onSaved }) {
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
-  const isFirstYear = String(academicYear) === "1";
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -67,11 +74,8 @@ function EditMemberDialog({ member, onClose, onSaved }) {
 
     const nextErrors = {};
     if (!name.trim()) nextErrors.name = "Name is required.";
-    if (isFirstYear && !rollNumber.trim()) {
-      nextErrors.rollNumber = "Roll number is required for first-year members.";
-    }
-    if (!isFirstYear && !usn.trim()) {
-      nextErrors.usn = "USN is required for second-year and above members.";
+    if (!usn.trim() && !rollNumber.trim()) {
+      nextErrors.usn = "Enter a USN or a Roll Number.";
     }
     if (phone && !/^\+?[1-9]\d{7,14}$/.test(phone.trim())) {
       nextErrors.phone = "Use an international format such as +919876543210.";
@@ -149,7 +153,12 @@ function EditMemberDialog({ member, onClose, onSaved }) {
               disabled={saving}
             />
           </Field>
-          <Field label="USN" htmlFor="member-usn" error={errors.usn} required={!isFirstYear}>
+          <Field
+            label="USN"
+            htmlFor="member-usn"
+            error={errors.usn}
+            hint="Provide either a USN or a Roll Number."
+          >
             <TextInput
               id="member-usn"
               value={usn}
@@ -161,7 +170,6 @@ function EditMemberDialog({ member, onClose, onSaved }) {
             label="Roll number"
             htmlFor="member-roll"
             error={errors.rollNumber}
-            required={isFirstYear}
           >
             <TextInput
               id="member-roll"
@@ -225,6 +233,7 @@ function CreateMemberDialog({ onClose, onCreated }) {
   const [values, setValues] = useState({
     name: "",
     academic_year: "1",
+    identifier_type: "",
     identifier: "",
     email: "",
   });
@@ -232,20 +241,33 @@ function CreateMemberDialog({ onClose, onCreated }) {
   const [formError, setFormError] = useState(null);
   const [saving, setSaving] = useState(false);
 
-  const isFirstYear = String(values.academic_year) === "1";
-  const identifierLabel = isFirstYear ? "Roll number" : "USN";
+  const identifierLabel =
+    values.identifier_type === "usn"
+      ? "USN"
+      : values.identifier_type === "roll_number"
+        ? "Roll Number"
+        : "Identifier";
+  const loginIdSource =
+    values.identifier_type === "usn"
+      ? "USN"
+      : values.identifier_type === "roll_number"
+        ? "Roll Number"
+        : "selected identifier";
 
   const update = (key) => (event) => {
     setValues((current) => ({ ...current, [key]: event.target.value }));
   };
 
-  const updateYear = (event) => {
-    setValues((current) => ({
+  const updateIdentifierType = (identifierType) => {
+    setValues((current) => {
+      if (current.identifier_type === identifierType) return current;
+      return { ...current, identifier_type: identifierType, identifier: "" };
+    });
+    setErrors((current) => ({
       ...current,
-      academic_year: event.target.value,
-      identifier: "",
+      identifierType: undefined,
+      identifier: undefined,
     }));
-    setErrors((current) => ({ ...current, identifier: undefined }));
   };
 
   const handleSubmit = async (event) => {
@@ -255,12 +277,15 @@ function CreateMemberDialog({ onClose, onCreated }) {
     const identifier = values.identifier.trim();
     const nextErrors = {};
     if (!values.name.trim()) nextErrors.name = "Name is required.";
+    if (!values.identifier_type) {
+      nextErrors.identifierType = "Select USN or Roll Number.";
+    }
     if (!identifier) {
       nextErrors.identifier = `${identifierLabel} is required.`;
-    } else if (isFirstYear && !/^[\w-]+$/.test(identifier)) {
-      nextErrors.identifier = "Roll number contains invalid characters.";
-    } else if (!isFirstYear && !/^[A-Z0-9]{6,15}$/i.test(identifier)) {
+    } else if (values.identifier_type === "usn" && !/^[A-Z0-9]{6,15}$/i.test(identifier)) {
       nextErrors.identifier = "USN must be 6-15 letters and digits.";
+    } else if (values.identifier_type === "roll_number" && !/^[\w-]+$/.test(identifier)) {
+      nextErrors.identifier = "Roll Number contains invalid characters.";
     }
     if (!values.email.trim()) nextErrors.email = "Gmail address is required.";
     else if (!/^[^\s@]+@gmail\.com$/i.test(values.email.trim())) {
@@ -271,13 +296,15 @@ function CreateMemberDialog({ onClose, onCreated }) {
     setFormError(null);
     if (Object.keys(nextErrors).length) return;
 
+    const isUSN = values.identifier_type === "usn";
     setSaving(true);
     try {
       const result = await membersManagementApi.create({
         name: values.name.trim(),
         academic_year: Number(values.academic_year),
-        usn: isFirstYear ? "" : identifier.toUpperCase(),
-        roll_number: isFirstYear ? identifier : "",
+        identifier_type: values.identifier_type,
+        usn: isUSN ? identifier.toUpperCase() : "",
+        roll_number: isUSN ? "" : identifier,
         email: values.email.trim(),
       });
       onCreated(result);
@@ -316,9 +343,9 @@ function CreateMemberDialog({ onClose, onCreated }) {
         )}
 
         <Alert tone="info" title="What happens next">
-          A login ID is created from the {identifierLabel.toLowerCase()}. The account stays
-          inactive until fingerprint enrollment is complete, and the member can set a password
-          using Forgot password after activation.
+          A login ID is created from the {loginIdSource}. The account stays inactive until
+          fingerprint enrollment is complete, and the member can set a password using Forgot
+          password after activation.
         </Alert>
 
         <div className="lab-form-grid">
@@ -335,22 +362,39 @@ function CreateMemberDialog({ onClose, onCreated }) {
             <Select
               id="new-member-year"
               value={values.academic_year}
-              onChange={updateYear}
+              onChange={update("academic_year")}
               disabled={saving}
             >
-              {[1, 2, 3, 4, 5, 6, 7, 8].map((year) => (
+              {REGISTRATION_ACADEMIC_YEARS.map((year) => (
                 <option key={year} value={year}>Year {year}</option>
               ))}
             </Select>
+          </Field>
+          <Field
+            label="Identifier type"
+            error={errors.identifierType}
+            hint="Choose whether this member signs in with a USN or a Roll Number."
+            required
+            className="lab-span-2"
+          >
+            <SegmentedControl
+              options={IDENTIFIER_TYPE_OPTIONS}
+              value={values.identifier_type}
+              onChange={updateIdentifierType}
+              label="Member identifier type"
+              disabled={saving}
+            />
           </Field>
           <Field
             label={identifierLabel}
             htmlFor="new-member-identifier"
             error={errors.identifier}
             hint={
-              isFirstYear
-                ? "First-year members use their roll number."
-                : "Second-year and above members use their USN."
+              values.identifier_type === "usn"
+                ? "Enter the member's university seat number."
+                : values.identifier_type === "roll_number"
+                  ? "Enter the member's college roll number."
+                  : "Select an identifier type above to enter the value."
             }
             required
           >
@@ -358,10 +402,16 @@ function CreateMemberDialog({ onClose, onCreated }) {
               id="new-member-identifier"
               value={values.identifier}
               onChange={update("identifier")}
-              placeholder={isFirstYear ? "Roll number" : "4AL25CS000"}
-              autoCapitalize={isFirstYear ? "none" : "characters"}
+              placeholder={
+                values.identifier_type === "usn"
+                  ? "4AL25CS000"
+                  : values.identifier_type === "roll_number"
+                    ? "Roll number"
+                    : "Select an identifier type first"
+              }
+              autoCapitalize={values.identifier_type === "usn" ? "characters" : "none"}
               spellCheck="false"
-              disabled={saving}
+              disabled={saving || !values.identifier_type}
             />
           </Field>
           <Field

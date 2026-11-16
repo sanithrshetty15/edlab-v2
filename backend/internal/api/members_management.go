@@ -32,8 +32,54 @@ func isGmailAddress(email string) bool {
 	return found && local != "" && domain == "gmail.com"
 }
 
+func normalizeMemberIdentifier(identifierType, usn, roll string) (string, string, string, []string) {
+	identifierType = strings.ToLower(strings.TrimSpace(identifierType))
+	usn = strings.ToUpper(strings.TrimSpace(usn))
+	roll = strings.TrimSpace(roll)
+
+	validationErrors := []string{}
+	switch identifierType {
+	case "":
+		switch {
+		case usn == "" && roll == "":
+			validationErrors = append(validationErrors, "Select USN or Roll Number and enter the identifier")
+		case usn != "" && roll != "":
+			validationErrors = append(validationErrors, "Provide either a USN or a Roll Number, not both")
+		case usn != "":
+			identifierType = "usn"
+		default:
+			identifierType = "roll_number"
+		}
+	case "usn":
+		if usn == "" {
+			validationErrors = append(validationErrors, "USN is required")
+		}
+		if roll != "" {
+			validationErrors = append(validationErrors, "Roll Number cannot be used when USN is selected")
+		}
+	case "roll", "roll_number":
+		identifierType = "roll_number"
+		if roll == "" {
+			validationErrors = append(validationErrors, "Roll Number is required")
+		}
+		if usn != "" {
+			validationErrors = append(validationErrors, "USN cannot be used when Roll Number is selected")
+		}
+	default:
+		validationErrors = append(validationErrors, "Identifier type must be either USN or Roll Number")
+	}
+	if usn != "" && !usnPattern.MatchString(usn) {
+		validationErrors = append(validationErrors, "USN must be 6-15 letters and digits")
+	}
+	if roll != "" && !rollPattern.MatchString(roll) {
+		validationErrors = append(validationErrors, "Roll number contains invalid characters")
+	}
+	return identifierType, usn, roll, validationErrors
+}
+
 type createMemberRequest struct {
 	Name                 string `json:"name"`
+	IdentifierType       string `json:"identifier_type"`
 	USN                  string `json:"usn"`
 	RollNumber           string `json:"roll_number"`
 	AcademicYear         int    `json:"academic_year"`
@@ -112,8 +158,11 @@ func (s *Server) createMember(c *gin.Context) {
 	name := strings.TrimSpace(request.Name)
 	loginID := strings.TrimSpace(request.LoginID)
 	email := strings.ToLower(strings.TrimSpace(request.Email))
-	usn := strings.ToUpper(strings.TrimSpace(request.USN))
-	roll := strings.TrimSpace(request.RollNumber)
+	identifierType, usn, roll, identifierErrors := normalizeMemberIdentifier(
+		request.IdentifierType,
+		request.USN,
+		request.RollNumber,
+	)
 	branch := strings.TrimSpace(request.Branch)
 	section := strings.TrimSpace(request.Section)
 	normalized := ""
@@ -123,32 +172,20 @@ func (s *Server) createMember(c *gin.Context) {
 	password := request.Password
 	academicYear := request.AcademicYear
 
-	validationErrors := []string{}
+	validationErrors := append([]string{}, identifierErrors...)
 	if name == "" {
 		validationErrors = append(validationErrors, "Name is required")
 	}
-	if academicYear < 1 || academicYear > 8 {
-		validationErrors = append(validationErrors, "Academic year must be between 1 and 8")
+	if academicYear < 1 || academicYear > 4 {
+		validationErrors = append(validationErrors, "Academic year must be between 1 and 4")
 	}
 	if email == "" {
 		validationErrors = append(validationErrors, "Email is required")
 	} else if !isGmailAddress(email) {
 		validationErrors = append(validationErrors, "Please provide a valid Gmail address ending in @gmail.com")
 	}
-	if usn != "" && !usnPattern.MatchString(usn) {
-		validationErrors = append(validationErrors, "USN must be 6-15 letters and digits")
-	}
-	if roll != "" && !rollPattern.MatchString(roll) {
-		validationErrors = append(validationErrors, "Roll number contains invalid characters")
-	}
-	if academicYear == 1 && roll == "" {
-		validationErrors = append(validationErrors, "Roll number is required for first-year members")
-	}
-	if academicYear > 1 && usn == "" {
-		validationErrors = append(validationErrors, "USN is required for second-year and above members")
-	}
 	if loginID == "" {
-		if academicYear == 1 {
+		if identifierType == "roll_number" {
 			loginID = roll
 		} else {
 			loginID = usn
