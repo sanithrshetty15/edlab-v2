@@ -26,6 +26,7 @@
 #include "R307S.h"
 #include "device_auth.h"
 #include "enrollment_flow.h"
+#include "reader_readiness.h"
 #include "wifi_manager.h"
 
 namespace {
@@ -43,8 +44,21 @@ R307S* enrollmentReader =
     &entryReader;
 #endif
 
-bool enrollmentReaderReady = false;
+ReaderReadiness readerReadiness = ReaderReadiness::NOT_READY;
+bool readerReportPending = false;
 bool enrollmentDisabledLogged = false;
+
+enum class SensorActivity { NONE, READINESS, ENROLLMENT };
+
+SensorActivity sensorActivity = SensorActivity::NONE;
+
+struct SensorActivityGuard {
+  SensorActivity previous;
+  explicit SensorActivityGuard(SensorActivity next) : previous(sensorActivity) {
+    sensorActivity = next;
+  }
+  ~SensorActivityGuard() { sensorActivity = previous; }
+};
 
 SystemMode mode = MODE_IDLE;
 
@@ -61,6 +75,8 @@ unsigned long lastAuthAttempt = 0;
 unsigned long lastEnrollmentRefresh = 0;
 unsigned long lastEnrollmentPoll = 0;
 unsigned long lastReaderReport = 0;
+unsigned long lastReaderReportAttempt = 0;
+unsigned long lastReaderPoll = 0;
 
 EnrollmentInfo enrollments[MAX_ENROLLMENTS];
 size_t enrollmentCount = 0;
@@ -77,6 +93,7 @@ struct ActiveEnrollment {
   unsigned long lastStatusCheck = 0;
   unsigned long lastCompleteAttempt = 0;
   uint8_t scanErrors = 0;
+  bool readerPreflightDone = false;
 };
 
 ActiveEnrollment activeEnrollment;
@@ -377,21 +394,73 @@ void handleHeartbeat() {
   Serial.println(pending);
 }
 
+void setReaderReadiness(ReaderReadiness next) {
+  if (readerReadiness == next) {
+    return;
+  }
+  readerReadiness = next;
+  readerReportPending = true;
+  Serial.print("Reader readiness: ");
+  Serial.println(readerReadinessStatus(readerReadiness));
+}
+
+void observeReaderImage(bool captured, uint8_t confirmation) {
+  if (captured) {
+    setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
+    return;
+  }
+  if (confirmation == R307S_OK) {
+    setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
+    return;
+  }
+  if (confirmation == R307S_ERR_NOFINGER) {
+    setReaderReadiness(ReaderReadiness::WAITING_FOR_FINGER);
+    return;
+  }
+  if (confirmation == R307S_ERR_FLASH) {
+    setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
+    return;
+  }
+  if (confirmation == R307S_ERR_RECV) {
+    setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
+    return;
+  }
+  if (confirmation == R307S_NO_CONFIRMATION) {
+    setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
+    return;
+  }
+  // Other error codes: report sensor errors
+  setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
+}
+
 void reportReaderIfDue(bool force) {
   if (enrollmentReader == nullptr) {
     return;
   }
-  if (!force && millis() - lastReaderReport < READER_REPORT_INTERVAL) {
+
+  unsigned long now = millis();
+  bool intervalDue = now - lastReaderReport >= READER_REPORT_INTERVAL;
+  if (!force && !readerReportPending && !intervalDue) {
     return;
   }
-  lastReaderReport = millis();
-  if (!reportDeviceReaders(enrollmentReaderReady)) {
+  if (!force && readerReportPending &&
+      now - lastReaderReportAttempt < READER_REPORT_RETRY_INTERVAL) {
+    return;
+  }
+
+  lastReaderReportAttempt = now;
+  if (!reportDeviceReaders(readerReadinessIsConnected(readerReadiness),
+                           readerReadinessStatus(readerReadiness))) {
+    lastReaderReport = now;
     Serial.println("Reader report failed; will retry");
     return;
   }
+  lastReaderReport = now;
+  readerReportPending = false;
   Serial.print("Reader reported: login, UART ");
   Serial.print(LOGIN_UART);
-  Serial.println(enrollmentReaderReady ? ", connected" : ", disconnected");
+  Serial.print(", readiness=");
+  Serial.println(readerReadinessStatus(readerReadiness));
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +469,7 @@ void reportReaderIfDue(bool force) {
 
 void logLoginScanIssue(const char* message, uint8_t confirmation) {
   unsigned long now = millis();
-  if (now - lastLoginScanLog < LOGIN_SCAN_LOG_INTERVAL) {
+  if (lastLoginScanLog != 0 && now - lastLoginScanLog < LOGIN_SCAN_LOG_INTERVAL) {
     return;
   }
   lastLoginScanLog = now;
@@ -411,37 +480,35 @@ void logLoginScanIssue(const char* message, uint8_t confirmation) {
   Serial.println(")");
 }
 
-bool scanFingerprintReader(R307S& reader, uint16_t& slot) {
+bool processCapturedFingerprint(R307S& reader, uint16_t& slot) {
   slot = 0;
-  if (!reader.getImage(nullptr)) {
-    uint8_t confirmation = reader.lastConfirmation();
-    if (confirmation != R307S_ERR_NOFINGER) {
-      logLoginScanIssue("image capture failed", confirmation);
-    }
-    return false;
-  }
   if (!reader.img2tz(static_cast<uint8_t>(1))) {
+    setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
     logLoginScanIssue("image conversion failed", reader.lastConfirmation());
     return false;
   }
   if (!reader.search(slot)) {
     if (reader.lastConfirmation() == R307S_ERR_NOTFOUND) {
       logLoginScanIssue("unregistered fingerprint", R307S_ERR_NOTFOUND);
+      setReaderReadiness(ReaderReadiness::READY);
     } else {
       logLoginScanIssue("template search failed", reader.lastConfirmation());
+      setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
     }
     return false;
   }
   return true;
 }
 
-void recordLoginScan() {
+void processLoginCapture() {
   uint16_t slot = 0;
-  if (!scanFingerprintReader(entryReader, slot)) {
+  if (!processCapturedFingerprint(entryReader, slot)) {
     return;
   }
+
   unsigned long now = millis();
   if (now - lastLoginScan < SCAN_DEBOUNCE_MS) {
+    setReaderReadiness(ReaderReadiness::READY);
     return;
   }
   lastLoginScan = now;
@@ -451,6 +518,7 @@ void recordLoginScan() {
 
   if (!isDeviceAuthenticated()) {
     errorSignal();
+    setReaderReadiness(ReaderReadiness::READY);
     Serial.println("Entry denied: device not authenticated");
     return;
   }
@@ -472,6 +540,34 @@ void recordLoginScan() {
     Serial.print("Entry denied by backend: ");
     Serial.println(reason.length() > 0 ? reason : String("not authorised"));
   }
+  setReaderReadiness(ReaderReadiness::READY);
+}
+
+void pollReaderForLogin() {
+  if (sensorActivity != SensorActivity::NONE) {
+    return;
+  }
+  unsigned long now = millis();
+  if (now - lastReaderPoll < READER_POLL_INTERVAL) {
+    return;
+  }
+  if (now - lastLoginScan < SCAN_DEBOUNCE_MS) {
+    return;
+  }
+  lastReaderPoll = now;
+
+  SensorActivityGuard guard(SensorActivity::READINESS);
+  if (!entryReader.getImage(nullptr)) {
+    uint8_t confirmation = entryReader.lastConfirmation();
+    observeReaderImage(false, confirmation);
+    if (confirmation != R307S_ERR_NOFINGER) {
+      logLoginScanIssue("image capture failed", confirmation);
+    }
+    return;
+  }
+
+  setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
+  processLoginCapture();
 }
 
 // ---------------------------------------------------------------------------
@@ -514,6 +610,9 @@ void stopEnrollment(bool success, const String& reason) {
   if (reason.length() > 0) {
     Serial.print("Enrollment stopped: ");
     Serial.println(reason);
+  }
+  if (success) {
+    setReaderReadiness(ReaderReadiness::READY);
   }
   activeEnrollment = ActiveEnrollment();
   mode = MODE_IDLE;
@@ -698,6 +797,10 @@ void processActiveEnrollment() {
     mode = MODE_IDLE;
     return;
   }
+  if (sensorActivity != SensorActivity::NONE) {
+    return;
+  }
+  SensorActivityGuard guard(SensorActivity::ENROLLMENT);
 
   if (millis() - activeEnrollment.lastStatusCheck >= ENROLLMENT_RECONCILE_INTERVAL) {
     activeEnrollment.lastStatusCheck = millis();
@@ -712,6 +815,35 @@ void processActiveEnrollment() {
     return;
   }
 
+  if (!activeEnrollment.readerPreflightDone &&
+      activeEnrollment.stage == enrollment_flow::Stage::WaitingFirstScan) {
+    if (millis() - activeEnrollment.lastScanAt < READER_POLL_INTERVAL) {
+      return;
+    }
+    activeEnrollment.lastScanAt = millis();
+    if (enrollmentReader->getImage(nullptr)) {
+      setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
+      activeEnrollment.scanErrors = 0;
+      return;
+    }
+
+    uint8_t confirmation = enrollmentReader->lastConfirmation();
+    if (confirmation == R307S_ERR_NOFINGER) {
+      activeEnrollment.scanErrors = 0;
+      activeEnrollment.readerPreflightDone = true;
+      setReaderReadiness(ReaderReadiness::WAITING_FOR_FINGER);
+      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+      return;
+    }
+
+    activeEnrollment.scanErrors++;
+    setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
+    if (activeEnrollment.scanErrors >= 3) {
+      failActiveEnrollment("sensor_error", "Enrollment reader is not ready");
+    }
+    return;
+  }
+
   if (millis() - activeEnrollment.lastScanAt < ENROLLMENT_SCAN_INTERVAL) {
     return;
   }
@@ -722,16 +854,20 @@ void processActiveEnrollment() {
       if (!enrollmentReader->getImage(nullptr)) {
         if (enrollmentReader->lastConfirmation() == R307S_ERR_NOFINGER) {
           activeEnrollment.scanErrors = 0;
+          setReaderReadiness(ReaderReadiness::WAITING_FOR_FINGER);
           return;
         }
         activeEnrollment.scanErrors++;
+        setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
         if (activeEnrollment.scanErrors >= 3) {
           failActiveEnrollment("sensor_error", "Unable to capture the first fingerprint image");
         }
         return;
       }
       activeEnrollment.scanErrors = 0;
+      setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
       if (!enrollmentReader->img2tz(static_cast<uint8_t>(1))) {
+        setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
         failActiveEnrollment("first_scan_failed", "Unable to process the first fingerprint image");
         return;
       }
@@ -749,16 +885,19 @@ void processActiveEnrollment() {
     }
     case enrollment_flow::Stage::WaitingFingerRemoval: {
       if (enrollmentReader->getImage(nullptr)) {
+        setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
         return;
       }
       if (enrollmentReader->lastConfirmation() != R307S_ERR_NOFINGER) {
         activeEnrollment.scanErrors++;
+        setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
         if (activeEnrollment.scanErrors >= 3) {
           failActiveEnrollment("sensor_error", "Finger removal could not be detected");
         }
         return;
       }
       activeEnrollment.scanErrors = 0;
+      setReaderReadiness(ReaderReadiness::WAITING_FOR_FINGER);
       activeEnrollment.stage = enrollment_flow::next(
           activeEnrollment.stage, enrollment_flow::Event::FingerRemoved);
       buzzPattern(1);
@@ -769,19 +908,24 @@ void processActiveEnrollment() {
       if (!enrollmentReader->getImage(nullptr)) {
         if (enrollmentReader->lastConfirmation() == R307S_ERR_NOFINGER) {
           activeEnrollment.scanErrors = 0;
+          setReaderReadiness(ReaderReadiness::WAITING_FOR_FINGER);
           return;
         }
         activeEnrollment.scanErrors++;
+        setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
         if (activeEnrollment.scanErrors >= 3) {
           failActiveEnrollment("sensor_error", "Unable to capture the second fingerprint image");
         }
         return;
       }
       activeEnrollment.scanErrors = 0;
+      setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
       if (!enrollmentReader->img2tz(static_cast<uint8_t>(2))) {
+        setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
         failActiveEnrollment("second_scan_failed", "Unable to process the second fingerprint image");
         return;
       }
+      setReaderReadiness(ReaderReadiness::READY);
 
       activeEnrollment.stage =
           enrollment_flow::next(activeEnrollment.stage, enrollment_flow::Event::SecondCaptured);
@@ -848,7 +992,7 @@ void startActiveEnrollment(const EnrollmentSessionInfo& info) {
   activeEnrollment.sessionUid = info.sessionUid;
   activeEnrollment.memberId = info.memberId;
   activeEnrollment.memberName = info.memberName;
-  activeEnrollment.lastScanAt = millis();
+  activeEnrollment.lastScanAt = millis() - READER_POLL_INTERVAL;
   activeEnrollment.lastStatusCheck = millis();
   activeEnrollment.stage = enrollment_flow::Stage::WaitingFirstScan;
   mode = MODE_ENROLLMENT;
@@ -865,13 +1009,13 @@ void startActiveEnrollment(const EnrollmentSessionInfo& info) {
       activeEnrollment.slot = static_cast<uint16_t>(info.slot);
       activeEnrollment.slotStored = true;
       activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
+      activeEnrollment.readerPreflightDone = true;
+      setReaderReadiness(ReaderReadiness::READY);
       savePersistedEnrollment(activeEnrollment.sessionUid, activeEnrollment.slot);
       reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), activeEnrollment.slot);
       return;
     }
   }
-
-  reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
 }
 
 bool reconcilePersistedEnrollment() {
@@ -959,6 +1103,7 @@ bool reconcilePersistedEnrollment() {
     activeEnrollment.slot = persistedEnrollmentSlot;
     activeEnrollment.slotStored = true;
     activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
+    activeEnrollment.readerPreflightDone = true;
     activeEnrollment.lastStatusCheck = millis();
     mode = MODE_ENROLLMENT;
     setLEDStatus(true, false, false);
@@ -985,11 +1130,14 @@ void processEnrollmentCommand() {
   if (mode != MODE_IDLE) {
     return;
   }
-  if (enrollmentReader == nullptr || !enrollmentReaderReady) {
+  if (enrollmentReader == nullptr) {
     if (!enrollmentDisabledLogged) {
       enrollmentDisabledLogged = true;
-      Serial.println("Enrollment reader is not configured or not detected; enrollment disabled");
+      Serial.println("Enrollment reader is not configured; enrollment disabled");
     }
+    return;
+  }
+  if (!readerReadinessCanStartEnrollment(readerReadiness)) {
     return;
   }
   if (!isWifiConnected() || !isDeviceAuthenticated()) {
@@ -998,7 +1146,11 @@ void processEnrollmentCommand() {
   if (millis() - lastEnrollmentPoll < ENROLLMENT_POLL_INTERVAL) {
     return;
   }
+  if (sensorActivity != SensorActivity::NONE) {
+    return;
+  }
   lastEnrollmentPoll = millis();
+  SensorActivityGuard guard(SensorActivity::ENROLLMENT);
 
   if (hasPersistedEnrollment()) {
     reconcilePersistedEnrollment();
@@ -1049,17 +1201,16 @@ void setup() {
   digitalWrite(BUZZER_PIN, LOW);
 
   bool entryReady = entryReader.begin();
+  readerReadiness = entryReady ? ReaderReadiness::INITIALIZING : ReaderReadiness::NOT_READY;
   Serial.print("Entry reader: ");
-  Serial.println(entryReady ? "ready" : "not detected");
+  Serial.println(entryReady ? "password verified; capture readiness pending" : "not detected");
 
-#if ENROLLMENT_READER == ENROLLMENT_READER_NONE
-  enrollmentReaderReady = false;
-#else
-  enrollmentReaderReady = entryReady;
-#endif
   loadPersistedEnrollment();
-  Serial.print("Enrollment reader: ");
-  Serial.println(enrollmentReaderReady ? "ready" : "disabled or not detected");
+#if ENROLLMENT_READER == ENROLLMENT_READER_NONE
+  Serial.println("Enrollment reader: disabled");
+#else
+  Serial.println("Enrollment reader: configured; capture readiness pending");
+#endif
 
   wifiBegin();
   Serial.println("Wi-Fi connection started");
@@ -1105,9 +1256,9 @@ void loop() {
   if (mode == MODE_ENROLLMENT) {
     processActiveEnrollment();
   } else {
-    processEnrollmentCommand();
+    pollReaderForLogin();
     if (mode == MODE_IDLE) {
-      recordLoginScan();
+      processEnrollmentCommand();
     }
   }
 

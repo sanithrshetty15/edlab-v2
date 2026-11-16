@@ -1,5 +1,63 @@
 #include "R307S.h"
 
+namespace {
+
+struct ResponseDiagnostics {
+  unsigned long rxBytes = 0;
+  bool headerDetected = false;
+  bool headerComplete = false;
+  bool packetInfoAvailable = false;
+  uint8_t packetId = 0;
+  uint16_t length = 0;
+  bool payloadComplete = false;
+  bool checksumChecked = false;
+  bool checksumValid = false;
+  uint8_t confirmation = R307S_NO_CONFIRMATION;
+};
+
+void logGenImgResponse(const ResponseDiagnostics& diag, const char* reason) {
+  static unsigned long lastLog = 0;
+  unsigned long now = millis();
+  if (lastLog != 0 && now - lastLog < 5000UL) {
+    return;
+  }
+  lastLog = now;
+
+  Serial.print("R307S GenImg: ");
+  Serial.print(reason);
+  Serial.print(", bytes=");
+  Serial.print(diag.rxBytes);
+  Serial.print(", header=");
+  Serial.print(diag.headerDetected ? "yes" : "no");
+  Serial.print(", header7=");
+  Serial.print(diag.headerComplete ? "yes" : "no");
+  Serial.print(", pid=");
+  if (diag.packetInfoAvailable) {
+    Serial.print("0x");
+    Serial.print(diag.packetId, HEX);
+  } else {
+    Serial.print("n/a");
+  }
+  Serial.print(", length=");
+  if (diag.packetInfoAvailable) {
+    Serial.print(diag.length);
+  } else {
+    Serial.print("n/a");
+  }
+  Serial.print(", payload=");
+  Serial.print(diag.payloadComplete ? "yes" : "no");
+  Serial.print(", checksum=");
+  if (!diag.checksumChecked) {
+    Serial.print("skipped");
+  } else {
+    Serial.print(diag.checksumValid ? "valid" : "invalid");
+  }
+  Serial.print(", confirmation=0x");
+  Serial.println(diag.confirmation, HEX);
+}
+
+} // namespace
+
 R307S::R307S(int uartNum, int rxPin, int txPin)
     : uartNum_(uartNum),
       rxPin_(rxPin),
@@ -39,6 +97,10 @@ bool R307S::execute(uint8_t command, const uint8_t* param, size_t paramLen,
                     uint8_t* out, size_t maxOut, size_t& outLen) {
   lastConfirmation_ = R307S_NO_CONFIRMATION;
   if (serial_ == nullptr) {
+    if (command == R307S_GENIMG) {
+      ResponseDiagnostics diag;
+      logGenImgResponse(diag, "serial_unavailable");
+    }
     return false;
   }
 
@@ -71,13 +133,17 @@ bool R307S::execute(uint8_t command, const uint8_t* param, size_t paramLen,
   serial_->write(packet, idx);
   serial_->flush();
 
-  return readResponse(out, maxOut, outLen);
+  return readResponse(out, maxOut, outLen, command == R307S_GENIMG);
 }
 
-bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen) {
+bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen, bool diagnostics) {
   outLen = 0;
   lastConfirmation_ = R307S_NO_CONFIRMATION;
+  ResponseDiagnostics diag;
   if (serial_ == nullptr) {
+    if (diagnostics) {
+      logGenImgResponse(diag, "serial_unavailable");
+    }
     return false;
   }
 
@@ -89,6 +155,7 @@ bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen) {
       continue;
     }
     uint8_t b = static_cast<uint8_t>(serial_->read());
+    diag.rxBytes++;
     if (b != 0xEF) {
       continue;
     }
@@ -99,30 +166,55 @@ bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen) {
     if (!serial_->available()) {
       continue;
     }
-    if (static_cast<uint8_t>(serial_->read()) == 0x01) {
+    uint8_t second = static_cast<uint8_t>(serial_->read());
+    diag.rxBytes++;
+    if (second == 0x01) {
       haveHeader = true;
+      diag.headerDetected = true;
       break;
     }
   }
   if (!haveHeader) {
+    if (diagnostics) {
+      logGenImgResponse(diag, diag.rxBytes == 0 ? "timeout_no_bytes" : "timeout_no_header");
+    }
     return false;
   }
 
   // Address (4) + package id (1) + length (2).
   uint8_t head[7];
-  if (serial_->readBytes(head, sizeof(head)) != sizeof(head)) {
+  size_t headBytes = serial_->readBytes(head, sizeof(head));
+  diag.rxBytes += headBytes;
+  if (headBytes != sizeof(head)) {
+    if (diagnostics) {
+      logGenImgResponse(diag, "header_incomplete");
+    }
     return false;
   }
+  diag.headerComplete = true;
+
   uint8_t packageId = head[4];
   uint16_t length = static_cast<uint16_t>((head[5] << 8) | head[6]);
+  diag.packetInfoAvailable = true;
+  diag.packetId = packageId;
+  diag.length = length;
   if (length < 3 || length > 64) {
+    if (diagnostics) {
+      logGenImgResponse(diag, "malformed_length");
+    }
     return false;
   }
 
   uint8_t payload[64];
-  if (serial_->readBytes(payload, length) != length) {
+  size_t payloadBytes = serial_->readBytes(payload, length);
+  diag.rxBytes += payloadBytes;
+  if (payloadBytes != length) {
+    if (diagnostics) {
+      logGenImgResponse(diag, "payload_incomplete");
+    }
     return false;
   }
+  diag.payloadComplete = true;
 
   uint16_t expected = static_cast<uint16_t>((payload[length - 2] << 8) | payload[length - 1]);
   uint8_t checkBuf[64];
@@ -133,7 +225,13 @@ bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen) {
   for (size_t i = 0; i + 2 < length; i++) {
     checkBuf[checkLen++] = payload[i];
   }
-  if (checksum16(checkBuf, checkLen) != expected) {
+  diag.confirmation = payload[0];
+  diag.checksumChecked = true;
+  diag.checksumValid = checksum16(checkBuf, checkLen) == expected;
+  if (!diag.checksumValid) {
+    if (diagnostics) {
+      logGenImgResponse(diag, "checksum_mismatch");
+    }
     return false;
   }
 
@@ -146,6 +244,9 @@ bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen) {
       out[i] = payload[1 + i];
     }
     outLen = copy;
+  }
+  if (diagnostics && confirmation != R307S_OK && confirmation != R307S_ERR_NOFINGER) {
+    logGenImgResponse(diag, "sensor_error");
   }
   return confirmation == R307S_OK;
 }

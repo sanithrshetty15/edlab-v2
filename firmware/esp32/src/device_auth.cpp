@@ -322,7 +322,7 @@ bool parseEnrollmentResponse(const String& response, int httpCode,
 
 } // namespace
 
-bool reportDeviceReaders(bool connected) {
+bool reportDeviceReaders(bool connected, const char* readiness) {
   JsonDocument request;
   JsonArray readers = request["readers"].to<JsonArray>();
   JsonObject reader = readers.add<JsonObject>();
@@ -330,6 +330,7 @@ bool reportDeviceReaders(bool connected) {
   reader["label"] = "Login reader";
   reader["uart"] = LOGIN_UART;
   reader["connected"] = connected;
+  reader["readiness"] = readiness != nullptr ? readiness : "not_ready";
 
   String body;
   serializeJson(request, body);

@@ -42,9 +42,10 @@ bool submitBiometricEvent(const String& eventType,
                           const String& idempotencyKey,
                           const String& payloadJson = "{}");
 
-// POST /api/v1/biometric/readers. Reports the single connected R307S entry
-// reader so the backend can offer it for fingerprint enrollment.
-bool reportDeviceReaders(bool connected);
+// POST /api/v1/biometric/readers. Reports the single R307S entry reader and
+// its last confirmed capture readiness so the backend can offer it for
+// fingerprint enrollment.
+bool reportDeviceReaders(bool connected, const char* readiness);
 
 // POST /api/v1/biometric/door-access. The backend synchronously verifies that
 // the fingerprint slot belongs to an active member on this device and returns

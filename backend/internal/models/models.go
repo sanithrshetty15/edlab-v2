@@ -218,6 +218,7 @@ type DeviceReader struct {
 	Label                string     `gorm:"not null;size:64" json:"label"`
 	UART                 int        `gorm:"not null;default:0" json:"uart"`
 	Connected            bool       `gorm:"not null;default:false" json:"connected"`
+	Readiness            string     `gorm:"not null;default:'not_ready';size:32" json:"readiness"`
 	LastSeenAt           *time.Time `json:"last_seen_at,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`

@@ -98,6 +98,15 @@
 #ifndef READER_REPORT_INTERVAL
 #define READER_REPORT_INTERVAL 30000UL
 #endif
+#ifndef READER_REPORT_RETRY_INTERVAL
+#define READER_REPORT_RETRY_INTERVAL 5000UL
+#endif
+
+// Idle GenImg probe used to confirm capture readiness. Login scans reuse the
+// image captured by this probe instead of commanding the sensor again.
+#ifndef READER_POLL_INTERVAL
+#define READER_POLL_INTERVAL 1000UL
+#endif
 
 // Electromagnetic lock relay.
 // Fail-safe wiring: the lock is energised while locked and releases when the

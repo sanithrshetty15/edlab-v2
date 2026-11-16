@@ -94,7 +94,7 @@ private:
   uint16_t checksum16(const uint8_t* data, size_t len) const;
   bool execute(uint8_t command, const uint8_t* param, size_t paramLen,
                uint8_t* out, size_t maxOut, size_t& outLen);
-  bool readResponse(uint8_t* out, size_t maxOut, size_t& outLen);
+  bool readResponse(uint8_t* out, size_t maxOut, size_t& outLen, bool diagnostics);
 };
 
 #endif // R307S_H
