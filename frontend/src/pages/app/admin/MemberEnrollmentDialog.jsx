@@ -202,6 +202,25 @@ export default function MemberEnrollmentDialog({
   const selectedReader = readers.find((reader) => reader.key === selectedReaderKey);
   const canStart = Boolean(selectedReaderKey && readersInfo?.device?.id && selectedReader?.available);
 
+  useEffect(() => {
+    console.info("[enrollment-diagnostic] start state", {
+      memberId: member.id,
+      canStart,
+      selectedReaderKey,
+      deviceId: readersInfo?.device?.id ?? null,
+      readersBusy,
+      readersErrorMessage: readersError?.message ?? null,
+      readers: (readersInfo?.readers || [])
+        .filter((reader) => reader.key === "login")
+        .map((reader) => ({
+          key: reader.key,
+          connected: reader.connected,
+          available: reader.available,
+          readiness: reader.readiness,
+        })),
+    });
+  }, [canStart, member.id, readersBusy, readersError, readersInfo, selectedReaderKey]);
+
   const applyResult = useCallback(
     (result) => {
       if (result?.enrollment) {
@@ -224,6 +243,17 @@ export default function MemberEnrollmentDialog({
   const applyReadersResult = useCallback((result) => {
     setReadersInfo(result);
     const readerList = (result?.readers || []).filter((reader) => reader.key === "login");
+    console.info("[enrollment-diagnostic] readers loaded", {
+      deviceId: result?.device?.id ?? null,
+      deviceName: result?.device?.name ?? null,
+      readers: readerList.map((reader) => ({
+        key: reader.key,
+        connected: reader.connected,
+        available: reader.available,
+        readiness: reader.readiness,
+        lastSeenAt: reader.last_seen_at,
+      })),
+    });
     setSelectedReaderKey((current) => {
       if (current && readerList.some((reader) => reader.key === current)) {
         return current;
@@ -354,9 +384,18 @@ export default function MemberEnrollmentDialog({
   const handleStart = async () => {
     if (busy || cancelling) return;
     if (!selectedReaderKey) {
+      console.warn("[enrollment-diagnostic] start blocked", {
+        memberId: member.id,
+        reason: "no_reader_selected",
+      });
       setError(new Error("Select an enrollment reader before starting."));
       return;
     }
+    console.info("[enrollment-diagnostic] start requested", {
+      memberId: member.id,
+      deviceId: readersInfo?.device?.id ?? null,
+      readerKey: selectedReaderKey,
+    });
     setBusy("start");
     setError(null);
     try {
@@ -364,8 +403,20 @@ export default function MemberEnrollmentDialog({
         device_registration_id: readersInfo?.device?.id,
         reader_key: selectedReaderKey,
       });
+      console.info("[enrollment-diagnostic] start accepted", {
+        memberId: member.id,
+        sessionUid: result?.enrollment?.session_uid ?? null,
+        status: result?.enrollment?.status ?? null,
+        deviceId: result?.enrollment?.device_registration_id ?? null,
+      });
       applyResult(result);
     } catch (startError) {
+      console.error("[enrollment-diagnostic] start failed", {
+        memberId: member.id,
+        status: startError?.status ?? null,
+        code: startError?.code ?? null,
+        message: startError?.message ?? null,
+      });
       setError(startError);
       loadReaders();
     } finally {

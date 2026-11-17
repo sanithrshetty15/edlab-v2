@@ -323,6 +323,10 @@ func (s *Server) enrollmentReadersForDevice(ctx context.Context, device *models.
 			items = append(items, serializeEnrollmentReader(reader, true))
 		}
 	}
+	s.Log.Info("enrollment readers loaded",
+		"device_id", device.ID,
+		"device_online", deviceIsOnline(device.LastSeenAt, now),
+		"readers", items)
 	return items, nil
 }
 
@@ -332,13 +336,25 @@ func (s *Server) enrollmentReaderAvailable(ctx context.Context, deviceID int64, 
 		Where("device_registration_id = ? AND reader_key = ?", deviceID, readerKey).
 		First(&reader).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
+		s.Log.Info("enrollment reader check", "device_id", deviceID, "reader_key", readerKey, "found", false)
 		return false, nil
 	}
 	if err != nil {
 		return false, err
 	}
-	return reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now) &&
-		enrollmentReaderCanStart(reader.Readiness), nil
+	available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now) &&
+		enrollmentReaderCanStart(reader.Readiness)
+	s.Log.Info("enrollment reader check",
+		"device_id", deviceID,
+		"reader_key", readerKey,
+		"found", true,
+		"connected", reader.Connected,
+		"readiness", reader.Readiness,
+		"last_seen_at", reader.LastSeenAt,
+		"fresh", enrollmentReaderIsFresh(reader.LastSeenAt, now),
+		"can_start", enrollmentReaderCanStart(reader.Readiness),
+		"available", available)
+	return available, nil
 }
 
 func (s *Server) loadActiveEnrollmentForDevice(ctx context.Context, deviceID int64) (*models.MemberEnrollmentSession, error) {

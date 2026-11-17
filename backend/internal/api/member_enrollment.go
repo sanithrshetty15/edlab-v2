@@ -320,6 +320,10 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "The entry reader is the only enrollment reader")
 		return
 	}
+	s.Log.Info("enrollment start request received",
+		"member_id", memberID,
+		"device_registration_id", request.DeviceRegistrationID,
+		"reader_key", readerKey)
 
 	ctx := c.Request.Context()
 	var member models.Member
@@ -341,6 +345,7 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 
 	if member.Status == "active" {
 		if session != nil && session.Status == enrollmentStatusFinalized {
+			s.Log.Info("enrollment start skipped", "member_id", member.ID, "reason", "already_finalized")
 			device := s.loadEnrollmentDevice(ctx, session.DeviceRegistrationID)
 			c.JSON(http.StatusOK, gin.H{
 				"success":    true,
@@ -350,10 +355,12 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 			})
 			return
 		}
+		s.Log.Info("enrollment start rejected", "member_id", member.ID, "reason", "member_already_active")
 		fail(c, http.StatusConflict, "Member is already active")
 		return
 	}
 	if member.Status != memberStatusPendingEnrollment {
+		s.Log.Info("enrollment start rejected", "member_id", member.ID, "reason", "member_not_pending_enrollment", "status", member.Status)
 		fail(c, http.StatusUnprocessableEntity, "Only members awaiting fingerprint enrollment can be started")
 		return
 	}
@@ -367,10 +374,12 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 			}
 		} else if session.Status != enrollmentStatusPendingDetails {
 			if session.ReaderKey == nil || *session.ReaderKey == "" {
+				s.Log.Info("enrollment start rejected", "member_id", member.ID, "reason", "active_session_missing_reader", "session_uid", session.SessionUID)
 				fail(c, http.StatusConflict, "This enrollment has no selected reader. Cancel it and start a new attempt")
 				return
 			}
 			if *session.ReaderKey != readerKey {
+				s.Log.Info("enrollment start rejected", "member_id", member.ID, "reason", "reader_mismatch", "session_uid", session.SessionUID, "active_reader_key", *session.ReaderKey, "requested_reader_key", readerKey)
 				device := s.loadEnrollmentDevice(ctx, session.DeviceRegistrationID)
 				c.JSON(http.StatusConflict, gin.H{
 					"success":    false,
@@ -379,6 +388,7 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 				})
 				return
 			}
+			s.Log.Info("enrollment start skipped", "member_id", member.ID, "reason", "already_in_progress", "session_uid", session.SessionUID, "status", session.Status)
 			device := s.loadEnrollmentDevice(ctx, session.DeviceRegistrationID)
 			member.EnrollmentStatus = session.Status
 			c.JSON(http.StatusOK, gin.H{
@@ -402,6 +412,7 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 		return
 	}
 	if !deviceIsOnline(device.LastSeenAt, now) {
+		s.Log.Info("enrollment start rejected", "member_id", member.ID, "device_id", device.ID, "reason", "device_offline", "last_seen_at", device.LastSeenAt)
 		c.JSON(http.StatusConflict, gin.H{
 			"success": false,
 			"message": "The selected biometric device is offline. Reconnect it and try again.",
@@ -506,6 +517,14 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 			return
 		}
 	}
+	s.Log.Info("enrollment session ready for device poll",
+		"session_uid", session.SessionUID,
+		"member_id", member.ID,
+		"device_id", device.ID,
+		"reader_key", readerKey,
+		"status", session.Status,
+		"attempts", session.Attempts,
+		"expires_at", session.ExpiresAt)
 
 	s.enqueueEnrollmentExpiry(ctx, session)
 	member.EnrollmentStatus = session.Status
@@ -779,6 +798,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 
 	cleanup, err := s.cleanupSessionForDevice(ctx, device.ID)
 	if err == nil {
+		s.Log.Info("enrollment poll resolved", "device_id", device.ID, "action", "cleanup", "reason", "cleanup_required", "session_uid", cleanup.SessionUID, "status", cleanup.Status)
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
 			"action":      "cleanup",
@@ -800,6 +820,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 		First(&session).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			s.Log.Info("enrollment poll resolved", "device_id", device.ID, "action", "none", "reason", "no_active_session")
 			c.JSON(http.StatusOK, gin.H{
 				"success":     true,
 				"action":      "none",
@@ -820,6 +841,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 			return
 		}
 		if session.CleanupRequired {
+			s.Log.Info("enrollment poll resolved", "device_id", device.ID, "action", "cleanup", "reason", "session_expired", "session_uid", session.SessionUID, "status", session.Status)
 			c.JSON(http.StatusOK, gin.H{
 				"success":     true,
 				"action":      "cleanup",
@@ -828,6 +850,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 			})
 			return
 		}
+		s.Log.Info("enrollment poll resolved", "device_id", device.ID, "action", "none", "reason", "session_expired", "session_uid", session.SessionUID, "status", session.Status)
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
 			"action":      "none",
@@ -839,6 +862,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 
 	var member models.Member
 	if err := s.DB.WithContext(ctx).First(&member, session.MemberID).Error; err == nil {
+		s.Log.Info("enrollment poll resolved", "device_id", device.ID, "action", "enroll", "session_uid", session.SessionUID, "status", session.Status, "claimed_at", session.ClaimedAt, "claimed_by_device_id", session.ClaimedByDeviceID)
 		c.JSON(http.StatusOK, gin.H{
 			"success":     true,
 			"action":      "enroll",
@@ -848,6 +872,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 		return
 	}
 
+	s.Log.Info("enrollment poll resolved", "device_id", device.ID, "action", "enroll", "reason", "member_lookup_failed", "session_uid", session.SessionUID, "status", session.Status, "claimed_at", session.ClaimedAt, "claimed_by_device_id", session.ClaimedByDeviceID)
 	c.JSON(http.StatusOK, gin.H{
 		"success":     true,
 		"action":      "enroll",
@@ -865,6 +890,7 @@ func (s *Server) claimEnrollmentCommand(c *gin.Context) {
 	if !ok {
 		return
 	}
+	s.Log.Info("enrollment claim received", "device_id", device.ID, "session_uid", session.SessionUID, "status", session.Status, "already_claimed_at", session.ClaimedAt)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	if session.ExpiresAt != nil && !session.ExpiresAt.After(now) {
 		if err := s.expireEnrollmentSessionRecord(c.Request.Context(), session, now); err != nil {

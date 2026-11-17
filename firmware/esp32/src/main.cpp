@@ -89,6 +89,7 @@ unsigned long lastHeartbeat = 0;
 unsigned long lastAuthAttempt = 0;
 unsigned long lastEnrollmentRefresh = 0;
 unsigned long lastEnrollmentPoll = 0;
+unsigned long lastEnrollmentIdlePollLog = 0;
 unsigned long enrollmentPollInterval = ENROLLMENT_POLL_INTERVAL;
 unsigned long lastReaderReport = 0;
 unsigned long lastReaderReportAttempt = 0;
@@ -981,6 +982,11 @@ void processActiveEnrollment() {
         }
         return;
       }
+      Serial.print("Enrollment: command claim acknowledged (HTTP ");
+      Serial.print(httpCode);
+      Serial.print(", session=");
+      Serial.print(claimed.sessionUid);
+      Serial.println(")");
       advanceActiveStage(enrollment_flow::Event::CommandClaimed);
       logEnrollmentStage("command received from backend; initializing reader");
       setReaderReadiness(ReaderReadiness::INITIALIZING);
@@ -1348,7 +1354,17 @@ void processEnrollmentCommand() {
                                              : ENROLLMENT_POLL_INTERVAL;
   if (action != "none") {
     Serial.print("Enrollment poll action: ");
-    Serial.println(action);
+    Serial.print(action);
+    Serial.print(" (HTTP ");
+    Serial.print(httpCode);
+    Serial.print(", status=");
+    Serial.print(info.valid ? info.status : "invalid");
+    Serial.println(")");
+  } else if (millis() - lastEnrollmentIdlePollLog >= 30000UL) {
+    lastEnrollmentIdlePollLog = millis();
+    Serial.print("Enrollment poll: none (HTTP ");
+    Serial.print(httpCode);
+    Serial.println(", authenticated=yes)");
   }
   if (action == "cleanup") {
     Serial.println("Enrollment: cleanup command received");
@@ -1379,6 +1395,10 @@ void setup() {
   delay(200);
   Serial.println();
   Serial.println("Edwins Lab ESP32 controller starting");
+  Serial.print("Firmware diagnostics build: ");
+  Serial.print(__DATE__);
+  Serial.print(" ");
+  Serial.println(__TIME__);
 
   pinMode(RELAY_PIN, OUTPUT);
   pinMode(EXIT_BUTTON, INPUT_PULLUP);
