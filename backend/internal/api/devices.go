@@ -236,7 +236,8 @@ func (s *Server) listDevices(c *gin.Context) {
 	readersByDevice := make(map[int64][]gin.H, len(devices))
 	for i := range readers {
 		reader := readers[i]
-		available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now)
+		available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now) &&
+			enrollmentReaderCanStart(reader.Readiness)
 		readersByDevice[reader.DeviceRegistrationID] = append(
 			readersByDevice[reader.DeviceRegistrationID],
 			serializeEnrollmentReader(reader, available),

@@ -69,10 +69,23 @@ func serializeEnrollmentReader(reader models.DeviceReader, available bool) gin.H
 		"key":          reader.ReaderKey,
 		"label":        reader.Label,
 		"uart":         reader.UART,
-		"connected":    available,
+		"connected":    reader.Connected,
 		"available":    available,
 		"readiness":    readiness,
 		"last_seen_at": reader.LastSeenAt,
+	}
+}
+
+// enrollmentReaderCanStart mirrors the firmware contract: a sensor may only be
+// offered for enrollment after it has answered at least one command. A sensor
+// that is still initializing or currently failing capture must not start a
+// session that is guaranteed to abort.
+func enrollmentReaderCanStart(readiness string) bool {
+	switch strings.ToLower(strings.TrimSpace(readiness)) {
+	case "ready", "waiting_for_finger":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -296,14 +309,16 @@ func (s *Server) enrollmentReadersForDevice(ctx context.Context, device *models.
 				UART:                 defaultUART,
 			}
 		}
-		available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now)
+		available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now) &&
+			enrollmentReaderCanStart(reader.Readiness)
 		items = append(items, serializeEnrollmentReader(reader, available))
 	}
 
 	// A dedicated reader exists only on a board where it is compiled in. The
 	// admin UI must not offer it while it is disconnected.
 	if reader, found := byKey[enrollmentReaderDedicated]; found {
-		available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now)
+		available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now) &&
+			enrollmentReaderCanStart(reader.Readiness)
 		if available {
 			items = append(items, serializeEnrollmentReader(reader, true))
 		}
@@ -322,7 +337,8 @@ func (s *Server) enrollmentReaderAvailable(ctx context.Context, deviceID int64, 
 	if err != nil {
 		return false, err
 	}
-	return reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now), nil
+	return reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now) &&
+		enrollmentReaderCanStart(reader.Readiness), nil
 }
 
 func (s *Server) loadActiveEnrollmentForDevice(ctx context.Context, deviceID int64) (*models.MemberEnrollmentSession, error) {

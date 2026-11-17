@@ -34,6 +34,7 @@ func (s *Server) registerBiometricRoutes(api *gin.RouterGroup) {
 	biometric.POST("/readers", s.RequireDevice(), s.reportDeviceReaders)
 	biometric.GET("/enrollment-session", s.RequireDevice(), s.claimEnrollmentSession)
 	biometric.GET("/enrollment-sessions/:uid", s.RequireDevice(), s.showEnrollmentSessionForDevice)
+	biometric.POST("/enrollment-sessions/:uid/claim", s.RequireDevice(), s.claimEnrollmentCommand)
 	biometric.POST("/enrollment-sessions/:uid/progress", s.RequireDevice(), s.updateEnrollmentSessionProgress)
 	biometric.POST("/enrollment-sessions/:uid/complete", s.RequireDevice(), s.completeEnrollmentSession)
 	biometric.POST("/enrollment-sessions/:uid/fail", s.RequireDevice(), s.failEnrollmentSession)

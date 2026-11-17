@@ -23,6 +23,7 @@ const (
 
 	enrollmentStatusPendingDetails   = "pending_details"
 	enrollmentStatusAwaitingSensor   = "awaiting_sensor"
+	enrollmentStatusSensorInit       = "sensor_initializing"
 	enrollmentStatusWaitingFirstScan = "waiting_first_scan"
 	enrollmentStatusFirstScan        = "first_scan_captured"
 	enrollmentStatusWaitingRemoval   = "waiting_for_removal"
@@ -35,6 +36,7 @@ const (
 	enrollmentStatusExpired          = "expired"
 
 	enrollmentSessionTTL             = 10 * time.Minute
+	enrollmentCleanupMaxAge          = 24 * time.Hour
 	enrollmentCancelLockTimeout      = 5 * time.Second
 	enrollmentCancelStatementTimeout = 10 * time.Second
 	enrollmentCancelRequestTimeout   = 15 * time.Second
@@ -53,6 +55,7 @@ var (
 )
 
 var enrollmentProgressStatuses = map[string]bool{
+	enrollmentStatusSensorInit:       true,
 	enrollmentStatusWaitingFirstScan: true,
 	enrollmentStatusFirstScan:        true,
 	enrollmentStatusWaitingRemoval:   true,
@@ -129,6 +132,8 @@ func serializeEnrollmentSession(session *models.MemberEnrollmentSession, member 
 		"error_message":          session.ErrorMessage,
 		"cleanup_required":       session.CleanupRequired,
 		"is_active":              session.IsActive,
+		"claimed_at":             session.ClaimedAt,
+		"claimed_by_device_id":   session.ClaimedByDeviceID,
 		"expires_at":             session.ExpiresAt,
 		"started_at":             session.StartedAt,
 		"completed_at":           session.CompletedAt,
@@ -396,6 +401,15 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 		fail(c, http.StatusInternalServerError, "Unable to start fingerprint enrollment")
 		return
 	}
+	if !deviceIsOnline(device.LastSeenAt, now) {
+		c.JSON(http.StatusConflict, gin.H{
+			"success": false,
+			"message": "The selected biometric device is offline. Reconnect it and try again.",
+			"code":    "device_offline",
+			"device":  serializeDevice(device),
+		})
+		return
+	}
 
 	available, err := s.enrollmentReaderAvailable(ctx, device.ID, readerKey, now)
 	if err != nil {
@@ -426,6 +440,8 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 				"attempts":               gorm.Expr("attempts + 1"),
 				"expires_at":             expiresAt,
 				"started_at":             now,
+				"claimed_at":             nil,
+				"claimed_by_device_id":   nil,
 				"error_code":             nil,
 				"error_message":          nil,
 				"updated_at":             now,
@@ -449,6 +465,8 @@ func (s *Server) startMemberFingerprintEnrollment(c *gin.Context) {
 		session.Attempts++
 		session.ExpiresAt = &expiresAt
 		session.StartedAt = &now
+		session.ClaimedAt = nil
+		session.ClaimedByDeviceID = nil
 		session.ErrorCode = nil
 		session.ErrorMessage = nil
 		started = true
@@ -716,10 +734,30 @@ func stringPointer(value string) *string {
 	return &value
 }
 
+func (s *Server) abandonStaleEnrollmentCleanup(ctx context.Context, deviceID int64, now time.Time) {
+	cutoff := now.Add(-enrollmentCleanupMaxAge)
+	result := s.DB.WithContext(ctx).Model(&models.MemberEnrollmentSession{}).
+		Where("device_registration_id = ? AND cleanup_required = true AND cleanup_completed_at IS NULL AND updated_at < ?",
+			deviceID, cutoff).
+		Updates(map[string]any{
+			"cleanup_required":     false,
+			"cleanup_completed_at": now,
+			"updated_at":           now,
+		})
+	if result.Error != nil {
+		s.Log.Error("stale enrollment cleanup abandonment failed", "device_id", deviceID, "error", result.Error)
+		return
+	}
+	if result.RowsAffected > 0 {
+		s.Log.Warn("abandoned stale enrollment cleanup without deleting a sensor slot",
+			"device_id", deviceID, "sessions", result.RowsAffected)
+	}
+}
+
 func (s *Server) cleanupSessionForDevice(ctx context.Context, deviceID int64) (*models.MemberEnrollmentSession, error) {
 	var session models.MemberEnrollmentSession
 	err := s.DB.WithContext(ctx).
-		Where("device_registration_id = ? AND cleanup_required = true AND reader_key IS NOT NULL", deviceID).
+		Where("device_registration_id = ? AND cleanup_required = true AND cleanup_completed_at IS NULL", deviceID).
 		Order("updated_at ASC, id ASC").
 		First(&session).Error
 	if err != nil {
@@ -735,6 +773,9 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
+	now := time.Now().UTC()
+
+	s.abandonStaleEnrollmentCleanup(ctx, device.ID, now)
 
 	cleanup, err := s.cleanupSessionForDevice(ctx, device.ID)
 	if err == nil {
@@ -742,7 +783,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 			"success":     true,
 			"action":      "cleanup",
 			"enrollment":  serializeEnrollmentSession(cleanup, nil, device),
-			"server_time": time.Now().UTC(),
+			"server_time": now,
 		})
 		return
 	}
@@ -754,7 +795,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 
 	var session models.MemberEnrollmentSession
 	err = s.DB.WithContext(ctx).
-		Where("device_registration_id = ? AND is_active = true AND reader_key IS NOT NULL", device.ID).
+		Where("device_registration_id = ? AND is_active = true AND reader_key IS NOT NULL AND (claimed_by_device_id IS NULL OR claimed_by_device_id = ?)", device.ID, device.ID).
 		Order("id ASC").
 		First(&session).Error
 	if err != nil {
@@ -763,7 +804,7 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 				"success":     true,
 				"action":      "none",
 				"enrollment":  nil,
-				"server_time": time.Now().UTC(),
+				"server_time": now,
 			})
 			return
 		}
@@ -772,7 +813,6 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 		return
 	}
 
-	now := time.Now().UTC()
 	if session.ExpiresAt != nil && !session.ExpiresAt.After(now) {
 		if err := s.expireEnrollmentSessionRecord(ctx, &session, now); err != nil {
 			s.Log.Error("enrollment session expiry failed", "session_id", session.ID, "error", err)
@@ -813,6 +853,87 @@ func (s *Server) claimEnrollmentSession(c *gin.Context) {
 		"action":      "enroll",
 		"enrollment":  serializeEnrollmentSession(&session, nil, device),
 		"server_time": now,
+	})
+}
+
+// claimEnrollmentCommand records that the device has actually received an
+// enrollment command. The poll endpoint may return an awaiting session more
+// than once (for example after a power cycle), but the first acknowledgement
+// is persisted so the admin UI can prove delivery.
+func (s *Server) claimEnrollmentCommand(c *gin.Context) {
+	device, session, ok := s.loadDeviceEnrollmentSession(c)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if session.ExpiresAt != nil && !session.ExpiresAt.After(now) {
+		if err := s.expireEnrollmentSessionRecord(c.Request.Context(), session, now); err != nil {
+			s.Log.Error("enrollment session expiry failed", "session_id", session.ID, "error", err)
+		}
+		failEnrollmentState(c, http.StatusConflict, "Fingerprint enrollment session expired", session)
+		return
+	}
+	if session.Status == enrollmentStatusFinalized {
+		c.JSON(http.StatusOK, gin.H{
+			"success":    true,
+			"message":    "Fingerprint enrollment is already finalized",
+			"enrollment": serializeEnrollmentSession(session, nil, device),
+		})
+		return
+	}
+	if !session.IsActive || session.Status == enrollmentStatusCancelled ||
+		session.Status == enrollmentStatusFailed || session.Status == enrollmentStatusExpired {
+		failEnrollmentState(c, http.StatusConflict, "Fingerprint enrollment is no longer active", session)
+		return
+	}
+	if session.CleanupRequired {
+		failEnrollmentState(c, http.StatusConflict, "Fingerprint enrollment requires sensor cleanup first", session)
+		return
+	}
+	if session.ReaderKey == nil || *session.ReaderKey == "" {
+		failEnrollmentState(c, http.StatusConflict, "Fingerprint enrollment has no selected reader", session)
+		return
+	}
+	if session.ClaimedByDeviceID != nil && *session.ClaimedByDeviceID != device.ID {
+		failEnrollmentState(c, http.StatusConflict, "Fingerprint enrollment command is owned by another device", session)
+		return
+	}
+	if session.ClaimedAt == nil {
+		result := s.DB.WithContext(c.Request.Context()).Model(&models.MemberEnrollmentSession{}).
+			Where("id = ? AND is_active = true AND (claimed_by_device_id IS NULL OR claimed_by_device_id = ?)", session.ID, device.ID).
+			Updates(map[string]any{
+				"claimed_at":           now,
+				"claimed_by_device_id": device.ID,
+				"updated_at":           now,
+			})
+		if result.Error != nil {
+			s.Log.Error("enrollment command claim failed", "session_id", session.ID, "error", result.Error)
+			fail(c, http.StatusInternalServerError, "Unable to claim fingerprint enrollment command")
+			return
+		}
+		if result.RowsAffected == 0 {
+			var current models.MemberEnrollmentSession
+			if err := s.DB.WithContext(c.Request.Context()).First(&current, session.ID).Error; err != nil ||
+				current.ClaimedAt == nil || current.ClaimedByDeviceID == nil || *current.ClaimedByDeviceID != device.ID {
+				fail(c, http.StatusConflict, "Fingerprint enrollment command was claimed by another device")
+				return
+			}
+			session.ClaimedAt = current.ClaimedAt
+			session.ClaimedByDeviceID = current.ClaimedByDeviceID
+		} else {
+			session.ClaimedAt = &now
+			session.ClaimedByDeviceID = &device.ID
+		}
+	}
+	s.writeDeviceAudit(c, "member_fingerprint_enrollment_claimed", "Member", &session.MemberID, gin.H{
+		"device_id":   device.ID,
+		"session_uid": session.SessionUID,
+		"reader_key":  session.ReaderKey,
+	})
+	c.JSON(http.StatusOK, gin.H{
+		"success":    true,
+		"message":    "Fingerprint enrollment command acknowledged",
+		"enrollment": serializeEnrollmentSession(session, nil, device),
 	})
 }
 

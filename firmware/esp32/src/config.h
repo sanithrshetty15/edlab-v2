@@ -102,6 +102,9 @@
 #ifndef ENROLLMENT_CLEANUP_RETRY_INTERVAL
 #define ENROLLMENT_CLEANUP_RETRY_INTERVAL 3000UL
 #endif
+#ifndef ENROLLMENT_CLAIM_RETRY_INTERVAL
+#define ENROLLMENT_CLAIM_RETRY_INTERVAL 1000UL
+#endif
 // Brief pause before login scanning resumes so the finger still resting on the
 // sensor after enrollment is not immediately treated as a door login.
 #ifndef ENROLLMENT_RESUME_COOLDOWN_MS
@@ -176,7 +179,7 @@
 #define WIFI_RETRY_INTERVAL 15000UL
 #endif
 #ifndef AUTH_RETRY_INTERVAL
-#define AUTH_RETRY_INTERVAL 300000UL
+#define AUTH_RETRY_INTERVAL 60000UL
 #endif
 #ifndef SCAN_DEBOUNCE_MS
 #define SCAN_DEBOUNCE_MS 750UL

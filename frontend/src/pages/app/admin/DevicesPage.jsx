@@ -29,6 +29,7 @@ const READINESS_LABELS = {
 
 const ENROLLMENT_LABELS = {
   awaiting_sensor: "Waiting for the ESP32 to claim the session",
+  sensor_initializing: "ESP32 acknowledged the command and is initializing the reader",
   waiting_first_scan: "Place the finger for the first scan",
   first_scan_captured: "First scan captured",
   waiting_for_removal: "Remove the finger",

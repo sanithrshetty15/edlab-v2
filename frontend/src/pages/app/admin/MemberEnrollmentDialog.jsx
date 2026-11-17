@@ -17,7 +17,7 @@ import {
   ShieldIcon,
   XCircleIcon,
 } from "../../../components/app/AppIcons";
-import { formatDate } from "../../../utils/format";
+import { formatDate, formatRelative } from "../../../utils/format";
 import MemberRegistrationProgress from "./MemberRegistrationProgress";
 
 const ENROLLMENT_STEPS = [
@@ -25,6 +25,11 @@ const ENROLLMENT_STEPS = [
     status: "awaiting_sensor",
     title: "Waiting for the ESP32",
     description: "The enrollment command is queued; the controller claims it within a second.",
+  },
+  {
+    status: "sensor_initializing",
+    title: "ESP32 acknowledged the command",
+    description: "The controller received the session and is initializing the R307S reader.",
   },
   {
     status: "waiting_first_scan",
@@ -66,6 +71,7 @@ const ENROLLMENT_STEPS = [
 
 const ACTIVE_STATUSES = new Set([
   "awaiting_sensor",
+  "sensor_initializing",
   "waiting_first_scan",
   "first_scan_captured",
   "waiting_for_removal",
@@ -301,7 +307,7 @@ export default function MemberEnrollmentDialog({
 
     const schedule = () => {
       if (!stopped && !cancelInFlightRef.current) {
-        timer = window.setTimeout(poll, 2000);
+        timer = window.setTimeout(poll, 1000);
       }
     };
 
@@ -666,6 +672,14 @@ export default function MemberEnrollmentDialog({
                   {
                     label: "Attempts",
                     value: session?.attempts ?? 0,
+                  },
+                  {
+                    label: "Command received",
+                    value: session?.claimed_at
+                      ? formatRelative(session.claimed_at)
+                      : isActive
+                        ? "Waiting for ESP32 acknowledgement"
+                        : "Not delivered",
                   },
                   {
                     label: "Session expires",

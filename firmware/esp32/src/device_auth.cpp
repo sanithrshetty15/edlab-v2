@@ -312,7 +312,7 @@ bool parseEnrollmentResponse(const String& response, int httpCode,
     return false;
   }
   if (deserializeJson(doc, response)) {
-    return true;
+    return false;
   }
   if (action != nullptr) {
     *action = doc["action"].as<String>();
@@ -432,6 +432,22 @@ bool fetchEnrollmentSession(const String& sessionUid, EnrollmentSessionInfo& out
     return false;
   }
   return httpCode == HTTP_CODE_OK && doc["success"].as<bool>();
+}
+
+bool claimEnrollmentCommand(const String& sessionUid, EnrollmentSessionInfo& out,
+                            int& httpCode) {
+  out = EnrollmentSessionInfo();
+  if (sessionUid.length() == 0) {
+    return false;
+  }
+  String response;
+  String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/claim";
+  if (!performDeviceRequest("POST", path, "{}", response, httpCode,
+                            ENROLLMENT_HTTP_TIMEOUT_MS)) {
+    return false;
+  }
+  JsonDocument doc;
+  return parseEnrollmentResponse(response, httpCode, doc, out);
 }
 
 bool updateEnrollmentProgress(const String& sessionUid, const String& status,

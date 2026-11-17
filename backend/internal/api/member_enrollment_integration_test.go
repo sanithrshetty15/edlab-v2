@@ -32,14 +32,16 @@ type enrollmentTestEnv struct {
 }
 
 type enrollmentTestSession struct {
-	SessionUID      string  `json:"session_uid"`
-	Status          string  `json:"status"`
-	MemberID        int64   `json:"member_id"`
-	ReaderKey       *string `json:"reader_key"`
-	FingerprintSlot *int    `json:"fingerprint_slot"`
-	CleanupRequired bool    `json:"cleanup_required"`
-	IsActive        bool    `json:"is_active"`
-	ErrorCode       string  `json:"error_code"`
+	SessionUID        string     `json:"session_uid"`
+	Status            string     `json:"status"`
+	MemberID          int64      `json:"member_id"`
+	ReaderKey         *string    `json:"reader_key"`
+	FingerprintSlot   *int       `json:"fingerprint_slot"`
+	CleanupRequired   bool       `json:"cleanup_required"`
+	IsActive          bool       `json:"is_active"`
+	ErrorCode         string     `json:"error_code"`
+	ClaimedAt         *time.Time `json:"claimed_at"`
+	ClaimedByDeviceID *int64     `json:"claimed_by_device_id"`
 }
 
 type enrollmentTestReader struct {
@@ -223,10 +225,15 @@ func (e *enrollmentTestEnv) createPendingMember(prefix string) (int64, string, s
 
 func (e *enrollmentTestEnv) reportReaders() {
 	e.t.Helper()
+	e.reportReadersWithReadiness("waiting_for_finger")
+}
+
+func (e *enrollmentTestEnv) reportReadersWithReadiness(readiness string) {
+	e.t.Helper()
 	recorder := e.request(http.MethodPost, "/api/v1/biometric/readers", "", e.deviceKey, map[string]any{
 		"readers": []map[string]any{
-			{"key": "login", "label": "Login reader", "uart": 2, "connected": true},
-			{"key": "logout", "label": "Logout reader", "uart": 1, "connected": true},
+			{"key": "login", "label": "Login reader", "uart": 2, "connected": true, "readiness": readiness},
+			{"key": "logout", "label": "Logout reader", "uart": 1, "connected": true, "readiness": readiness},
 		},
 	})
 	e.expect(recorder, http.StatusOK)
@@ -291,6 +298,11 @@ func (e *enrollmentTestEnv) complete(sessionUID string, slot int) *httptest.Resp
 		"fingerprint_slot": slot,
 		"device_user_id":   fmt.Sprintf("slot:%d", slot),
 	})
+}
+
+func (e *enrollmentTestEnv) claimCommand(sessionUID, deviceKey string) *httptest.ResponseRecorder {
+	e.t.Helper()
+	return e.request(http.MethodPost, fmt.Sprintf("/api/v1/biometric/enrollment-sessions/%s/claim", sessionUID), "", deviceKey, nil)
 }
 
 func (e *enrollmentTestEnv) loadMember(memberID int64) models.Member {
@@ -748,4 +760,144 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 			t.Fatalf("login ID after enrollment = %q, want %q", member.LoginID, roll)
 		}
 	})
+}
+
+func TestEnrollmentCommandClaimIsIdempotentAndExclusive(t *testing.T) {
+	env := setupEnrollmentTestEnv(t)
+	memberID, _, _ := env.createPendingMember("enroll-claim")
+	session := env.startEnrollment(memberID, "login")
+
+	claimed := env.claim()
+	if claimed.Action != "enroll" || claimed.Enrollment == nil {
+		t.Fatalf("unexpected claim before acknowledgement: %+v", claimed)
+	}
+	if claimed.Enrollment.ClaimedAt != nil {
+		t.Fatalf("session was marked claimed before the device acknowledged it: %+v", claimed.Enrollment)
+	}
+
+	recorder := env.claimCommand(session.SessionUID, env.deviceKey)
+	env.expect(recorder, http.StatusOK)
+	var response enrollmentTestResponse
+	env.decode(recorder, &response)
+	if response.Enrollment == nil || response.Enrollment.ClaimedAt == nil {
+		t.Fatalf("claim did not record claimed_at: %s", recorder.Body.String())
+	}
+	if response.Enrollment.ClaimedByDeviceID == nil || *response.Enrollment.ClaimedByDeviceID != env.deviceID {
+		t.Fatalf("claim recorded the wrong device: %s", recorder.Body.String())
+	}
+	firstClaim := *response.Enrollment.ClaimedAt
+
+	recorder = env.claimCommand(session.SessionUID, env.deviceKey)
+	env.expect(recorder, http.StatusOK)
+	env.decode(recorder, &response)
+	if response.Enrollment == nil || response.Enrollment.ClaimedAt == nil || !response.Enrollment.ClaimedAt.Equal(firstClaim) {
+		t.Fatalf("claim was not idempotent: %s", recorder.Body.String())
+	}
+
+	var otherDevice models.DeviceRegistration
+	otherKey := fmt.Sprintf("enrollment-other-device-%d", time.Now().UnixNano())
+	otherDevice = models.DeviceRegistration{
+		DeviceUID:    fmt.Sprintf("enrollment-other-%d", time.Now().UnixNano()),
+		Name:         "Other enrollment device",
+		DeviceType:   "esp32",
+		APIKeyDigest: hashDeviceAPIKey(otherKey),
+		Status:       deviceStatusActive,
+	}
+	if err := env.db.Create(&otherDevice).Error; err != nil {
+		t.Fatalf("create other device: %v", err)
+	}
+	recorder = env.claimCommand(session.SessionUID, otherKey)
+	env.expect(recorder, http.StatusForbidden)
+}
+
+func TestEnrollmentReaderReadinessGatesStart(t *testing.T) {
+	env := setupEnrollmentTestEnv(t)
+	memberID, _, _ := env.createPendingMember("enroll-readiness")
+
+	env.reportReadersWithReadiness("initializing")
+	recorder := env.request(http.MethodGet, fmt.Sprintf("/api/v1/members-management/%d/fingerprint-enrollment/readers", memberID), env.adminToken, "", nil)
+	env.expect(recorder, http.StatusOK)
+	var readersResponse enrollmentTestReadersResponse
+	env.decode(recorder, &readersResponse)
+	loginAvailable := false
+	for _, reader := range readersResponse.Readers {
+		if reader.Key == "login" {
+			loginAvailable = reader.Available
+		}
+	}
+	if loginAvailable {
+		t.Fatal("initializing reader must not be advertised as available")
+	}
+
+	recorder = env.request(http.MethodPost, fmt.Sprintf("/api/v1/members-management/%d/fingerprint-enrollment", memberID), env.adminToken, "", map[string]any{
+		"device_registration_id": env.deviceID,
+		"reader_key":             "login",
+	})
+	env.expect(recorder, http.StatusConflict)
+	var failed enrollmentTestResponse
+	env.decode(recorder, &failed)
+	if failed.Message == "" || !strings.Contains(strings.ToLower(failed.Message), "reader") {
+		t.Fatalf("unexpected readiness rejection: %s", recorder.Body.String())
+	}
+
+	env.reportReadersWithReadiness("waiting_for_finger")
+	session := env.startEnrollment(memberID, "login")
+	if session.Status != enrollmentStatusAwaitingSensor {
+		t.Fatalf("started session status = %q", session.Status)
+	}
+}
+
+func TestStaleCleanupDoesNotBlockNextEnrollment(t *testing.T) {
+	env := setupEnrollmentTestEnv(t)
+
+	firstMemberID, _, _ := env.createPendingMember("enroll-stale-cleanup")
+	firstSession := env.startEnrollment(firstMemberID, "login")
+	slot := 21
+	env.progress(firstSession.SessionUID, enrollmentStatusFailed, &slot, "sensor_store_failed", "Sensor failed after slot allocation")
+	past := time.Now().UTC().Add(-enrollmentCleanupMaxAge - time.Hour)
+	if err := env.db.Model(&models.MemberEnrollmentSession{}).
+		Where("session_uid = ?", firstSession.SessionUID).
+		Updates(map[string]any{"updated_at": past}).Error; err != nil {
+		t.Fatalf("age cleanup session: %v", err)
+	}
+
+	secondMemberID, _, _ := env.createPendingMember("enroll-after-stale-cleanup")
+	secondSession := env.startEnrollment(secondMemberID, "login")
+
+	claim := env.claim()
+	if claim.Action != "enroll" || claim.Enrollment == nil || claim.Enrollment.SessionUID != secondSession.SessionUID {
+		t.Fatalf("stale cleanup blocked the next enrollment: %+v", claim)
+	}
+
+	var stored models.MemberEnrollmentSession
+	if err := env.db.Where("session_uid = ?", firstSession.SessionUID).First(&stored).Error; err != nil {
+		t.Fatalf("load stale cleanup session: %v", err)
+	}
+	if stored.CleanupRequired {
+		t.Fatal("stale cleanup must be abandoned instead of blocking enrollment forever")
+	}
+	if stored.CleanupCompletedAt == nil {
+		t.Fatal("abandoned cleanup must record a completion timestamp")
+	}
+}
+
+func TestEnrollmentStartRejectsOfflineDevice(t *testing.T) {
+	env := setupEnrollmentTestEnv(t)
+	memberID, _, _ := env.createPendingMember("enroll-offline")
+	env.reportReaders()
+	past := time.Now().UTC().Add(-2 * deviceHeartbeatStaleAfter)
+	if err := env.db.Model(&models.DeviceRegistration{}).
+		Where("id = ?", env.deviceID).
+		Update("last_seen_at", past).Error; err != nil {
+		t.Fatalf("age device heartbeat: %v", err)
+	}
+
+	recorder := env.request(http.MethodPost, fmt.Sprintf("/api/v1/members-management/%d/fingerprint-enrollment", memberID), env.adminToken, "", map[string]any{
+		"device_registration_id": env.deviceID,
+		"reader_key":             "login",
+	})
+	env.expect(recorder, http.StatusConflict)
+	if !strings.Contains(recorder.Body.String(), "device_offline") {
+		t.Fatalf("offline device was not rejected clearly: %s", recorder.Body.String())
+	}
 }

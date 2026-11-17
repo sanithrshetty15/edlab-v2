@@ -68,6 +68,8 @@ bool submitFingerprintEnrollment(int64_t memberId,
 bool fetchEnrollmentCommand(EnrollmentSessionInfo& out, String& action, int& httpCode);
 bool fetchEnrollmentSession(const String& sessionUid, EnrollmentSessionInfo& out,
                             String& action, int& httpCode);
+bool claimEnrollmentCommand(const String& sessionUid, EnrollmentSessionInfo& out,
+                            int& httpCode);
 bool updateEnrollmentProgress(const String& sessionUid, const String& status,
                               int slot, const String& errorCode,
                               const String& errorMessage,

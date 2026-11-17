@@ -169,6 +169,8 @@ type MemberEnrollmentSession struct {
 	ErrorMessage         *string    `json:"error_message,omitempty"`
 	CleanupRequired      bool       `gorm:"not null;default:false" json:"cleanup_required"`
 	IsActive             bool       `gorm:"not null;default:true;index" json:"is_active"`
+	ClaimedAt            *time.Time `json:"claimed_at,omitempty"`
+	ClaimedByDeviceID    *int64     `json:"claimed_by_device_id,omitempty"`
 	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
 	StartedAt            *time.Time `json:"started_at,omitempty"`
 	CompletedAt          *time.Time `json:"completed_at,omitempty"`
