@@ -38,6 +38,6 @@ firmware/esp32/.pio/
 **/.pio/
 
 # Local firmware credentials (never commit)
-firmware/esp32/src/config.local.h
-**/config.local.h
+firmware/esp32/doorlock/doorlock_secrets.h
+**/doorlock_secrets.h
 frontend/test-results/

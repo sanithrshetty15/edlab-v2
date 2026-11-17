@@ -1,38 +1,45 @@
-# Edwins Lab ESP32 Firmware
+# Edwins Lab ESP32 Door Lock Firmware
 
-Firmware for the Edwins Lab biometric attendance and door access controller:
-ESP32-WROOM-32UE (ALF V1.0), one R307S entry reader, a fail-safe
-electromagnetic lock, a push-button exit, status LEDs and a buzzer.
+Firmware for the Edwins Lab biometric door lock controller: ESP32-WROOM-32UE on
+an ALF V1.0 board, one R307S fingerprint reader, a fail-safe electromagnetic
+lock, a push-button exit, status LEDs and a buzzer.
 
 The controller talks to the Go backend in `backend/` for device
-authentication, member enrolment, synchronous door authorization, and
-attendance events.
+authentication, fingerprint enrollment, synchronous door authorization, and
+access logging.
 
-## Build support
+## Single-file sketch
 
-PlatformIO is the supported build. The firmware has exactly one entry point:
+The entire firmware is one Arduino IDE sketch:
 
 ```
 firmware/esp32/
 ├── platformio.ini
-├── src/
-│   ├── main.cpp            # ONLY setup() and loop()
-│   ├── R307S.h/.cpp        # R307S UART driver (single entry reader)
-│   ├── enrollment_flow.h   # Pure two-scan enrollment state machine
-│   ├── wifi_manager.h/.cpp # Non-blocking Wi-Fi management
-│   ├── device_auth.h/.cpp  # Backend device auth + biometric events
-│   ├── config.h            # Single configuration source
-│   └── config.local.example.h
-├── test/
-│   └── test_enrollment_flow/test_main.cpp
-├── legacy/                 # Archived sketches, not compiled
-│   ├── CompleteFirmware.ino.legacy
-│   └── firmware_main.cpp.legacy
+├── doorlock/
+│   └── doorlock.ino      # entire firmware: config, R307S driver, Wi-Fi,
+│                         # device API client, enrollment state machine,
+│                         # relay, LEDs, buzzer, exit button
+├── legacy/               # archived sketches, not compiled
 └── README.md
 ```
 
-`CompleteFirmware.ino` and `firmware_main.cpp` were duplicate implementations.
-They are archived under `legacy/` so PlatformIO does not compile them.
+`doorlock.ino` contains the Wi-Fi credentials block, the R307S UART driver, the
+backend device client, the enrollment state machine, the door/indicator logic
+and the exit-button handling. There are no other firmware source files. The
+folder name (`doorlock`) matches the sketch name so the same file opens and
+uploads directly in the Arduino IDE.
+
+### Arduino IDE
+
+1. Open `firmware/esp32/doorlock/doorlock.ino`.
+2. Install the **ArduinoJson** library (Library Manager), version 7.x.
+3. Select board **ESP32 Dev Module** (or your ALF V1.0 board definition), the
+   correct port, upload speed `921600`.
+4. Set the configuration at the top of the sketch (see below) and press
+   Upload. Serial monitor: `115200`.
+
+Everything else (`WiFi`, `HTTPClient`, `Preferences`, `HardwareSerial`) ships
+with the ESP32 Arduino core.
 
 ### PlatformIO
 
@@ -41,63 +48,40 @@ cd firmware/esp32
 pio run            # build
 pio run -t upload  # flash
 pio device monitor # serial monitor at 115200
-pio test -e native # state-machine tests, no hardware required
 ```
 
-- Board: `esp32dev` (ESP32-WROOM-32UE)
-- Framework: Arduino
-- Dependencies: `bblanchon/ArduinoJson`, `adafruit/Adafruit Fingerprint Sensor Library`
-- The firmware uses its own dependency-free `R307S` driver; the Adafruit
-  library is included as the reference driver dependency.
-
-### Arduino IDE
-
-The project is not structured as an Arduino sketch. Use PlatformIO. If you
-need the Arduino IDE, open `src/main.cpp` in a sketch folder that also
-contains the other `src/` files, but PlatformIO is the tested path.
+`platformio.ini` sets `src_dir = doorlock`, so PlatformIO compiles the same
+single sketch. Board: `esp32dev`, framework: Arduino, dependency:
+`bblanchon/ArduinoJson`.
 
 ## Configuration
 
-`src/config.h` is the single source of configuration. Copy the example and
-fill in real credentials:
-
-```bash
-cp src/config.local.example.h src/config.local.h
-```
-
-`src/config.local.h` is git-ignored. Never commit Wi-Fi passwords, the device
-API key, or the HMAC secret. `config.h` includes `config.local.h` when present
-and otherwise falls back to placeholder values.
+The configuration block is at the top of `doorlock.ino` and holds placeholders
+only. Never commit real credentials.
 
 ```c
-#define WIFI_SSID "..."
-#define WIFI_PASSWORD "..."
+#define WIFI_SSID "CHANGE_ME_WIFI_SSID"
+#define WIFI_PASSWORD "CHANGE_ME_WIFI_PASSWORD"
 #define API_BASE_URL "https://edwinslab.onrender.com"
-#define DEVICE_API_KEY "..."
+#define DEVICE_API_KEY "CHANGE_ME_DEVICE_API_KEY"
 #define DEVICE_NAME "Edwins Lab ESP32 (ALF V1.0)"
 ```
 
-`DEVICE_HMAC_SECRET` is optional. Set it only when event HMAC signing is
-enabled; it must match the backend `BIOMETRIC_API_SECRET`.
-
-The single entry reader is also the enrollment reader by default. Enrollment
-uses the same sensor the member will physically scan at the door:
+To keep secrets out of the sketch file, create `doorlock_secrets.h` next to
+`doorlock.ino` (it is git-ignored) and define any of the macros there; the
+sketch includes it automatically when present:
 
 ```c
-#define ENROLLMENT_READER ENROLLMENT_READER_LOGIN
+#define WIFI_SSID "lab-wifi"
+#define WIFI_PASSWORD "..."
+#define DEVICE_API_KEY "<api_key from the provisioning response>"
 ```
-
-Set `ENROLLMENT_READER_NONE` only on a controller that must never enroll
-members. The legacy `ENROLLMENT_READER_LOGOUT` value is retained for source
-compatibility but now also maps to the single entry reader; the ALF V1.0 board
-has no second reader in this deployment. The entry reader must be detected at
-boot or enrollment stays disabled.
 
 ## Provisioning the device API key
 
-The backend generates `DEVICE_API_KEY`; it is **not** set manually in
-`config.h`. An administrator provisions the device once and copies the
-one-time key into `config.local.h`.
+The backend generates `DEVICE_API_KEY`; it is **not** set manually in the
+backend. An administrator provisions the device once and copies the one-time
+key into the sketch (or `doorlock_secrets.h`).
 
 1. Sign in as an administrator and capture the session token:
 
@@ -120,12 +104,7 @@ one-time key into `config.local.h`.
    (`esp32-<16 hex>` unless supplied), and a one-time `api_key` (64 lowercase
    hex characters). The response is marked `Cache-Control: no-store`.
 
-3. Put the returned key in `src/config.local.h`:
-
-   ```c
-   #define DEVICE_API_KEY "<api_key from the provisioning response>"
-   #define DEVICE_NAME "Edwins Lab ESP32 (ALF V1.0)"
-   ```
+3. Put the returned key into the sketch configuration (`DEVICE_API_KEY`).
 
 4. Build and flash:
 
@@ -137,9 +116,8 @@ one-time key into `config.local.h`.
 On boot the firmware calls
 `POST /api/v1/biometric/authenticate-device` with
 `{"api_key": DEVICE_API_KEY, "device_name": DEVICE_NAME}`. The response
-contains a one-hour `X-Device-Token`, which is used for enrollment, status,
-event submission and sync. The firmware re-authenticates automatically after a
-`401`/`403`.
+contains a one-hour `X-Device-Token`, used for enrollment, status and door
+authorization. The firmware re-authenticates automatically after a `401`/`403`.
 
 After successful authentication the firmware reports the connected entry
 reader with `POST /api/v1/biometric/readers`, then refreshes that report every
@@ -158,70 +136,78 @@ curl -X POST https://<host>/api/v1/devices/<device_id>/revoke \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-After rotation, replace `DEVICE_API_KEY` in `config.local.h` and reflash.
-After revocation, the device receives `401`/`403` until it is replaced by a
-newly provisioned device.
-
-Never commit `config.local.h`. `DEVICE_HMAC_SECRET` is a separate shared
-secret and is not replaced by per-device key rotation.
+After rotation, replace `DEVICE_API_KEY` and reflash. After revocation, the
+device receives `401`/`403` until it is replaced by a newly provisioned device.
 
 ## Pin assignments (ALF V1.0)
 
 | Signal | GPIO | Notes |
 |--------|------|-------|
-| `LOGIN_RX` / `LOGIN_TX` | 16 / 17 | R307S entry reader, UART2 |
-| `RELAY_PIN` | 25 | Electromagnetic lock |
+| `LOGIN_RX` / `LOGIN_TX` | 16 / 17 | R307S reader, UART2, 57600 baud |
+| `RELAY_PIN` | 25 | Electromagnetic lock, active LOW unlock |
 | `EXIT_BUTTON` | 33 | `INPUT_PULLUP`, pressed = LOW |
 | `GREEN_LED` | 23 | Status LED |
 | `RED_LED` | 22 | Status LED |
 | `BUZZER_PIN` | 21 | Active-HIGH |
 
-The legacy logout-reader pins are not used by this deployment. Enrollment and
-entry share the single entry reader.
+There is exactly one reader. It serves both door login and fingerprint
+enrollment; a login scan is never performed while the sensor is owned by the
+enrollment state machine.
 
-Relay levels are configurable in `config.h`:
+Relay levels are defined in the hardware section of the sketch:
 
 ```c
-#define RELAY_LOCKED_LEVEL HIGH   // energised lock
-#define RELAY_UNLOCK_LEVEL LOW    // de-energised, fail-safe release
+const int RELAY_LOCKED_LEVEL = HIGH;   // energised lock
+const int RELAY_UNLOCK_LEVEL = LOW;    // de-energised, fail-safe release
 ```
 
 Verify these against your relay module; an inverted module needs the levels
-swapped. `README` and the archived sketch previously disagreed, so measure the
-module before deploying.
+swapped.
+
+## Fingerprint storage architecture
+
+- The R307S stores the fingerprint templates in its own flash, one template per
+  slot, slots 1-127.
+- The backend stores the member details and the slot-to-member mapping. No
+  names, USNs, email addresses or other personal data are written to the
+  ESP32 or the sensor.
+- The ESP32 only learns a slot number from the sensor and sends that slot to
+  the backend. The backend decides whether the door opens and writes the
+  access log.
 
 ## Fingerprint enrollment workflow
 
-An administrator creates the member's details first, then starts a
-fingerprint enrollment session from member management. The device polls
-`GET /api/v1/biometric/enrollment-session` every two seconds and only claims a
-session when an enrollment reader is configured and ready.
+An administrator creates the member's details first, then starts a fingerprint
+enrollment session from the Door Lock System page. The device polls
+`GET /api/v1/biometric/enrollment-session` and claims the session when the
+reader is ready.
 
-1. The backend returns an `enroll` action and a `session_uid`.
-2. The firmware reports `waiting_first_scan`, captures the first image, and
-   reports `first_scan_captured`.
-3. The finger must be removed; the firmware then reports
-   `waiting_for_removal` and `waiting_second_scan`.
+1. The backend returns an `enroll` action, a `session_uid`, and the allocated
+   fingerprint slot.
+2. The firmware reports `sensor_initializing`, then `waiting_first_scan`,
+   captures the first image and reports `first_scan_captured`.
+3. The finger must be removed; the firmware reports `waiting_for_removal` and
+   `waiting_second_scan`.
 4. The second image is captured and reported as `second_scan_captured`.
-5. The driver compares both character buffers, merges them with `regModel`,
-   finds a free slot by probing the sensor, stores the template, and searches
-   every other slot for a duplicate.
-6. The slot is reported with `verifying` and the firmware calls
+5. The driver compares both character buffers, merges them with `regModel`, and
+   refuses to continue if the two scans do not match or the two samples are
+   below the match threshold.
+6. Before storing, the firmware verifies that the backend-allocated slot is
+   empty; an occupied slot fails the session instead of overwriting a template.
+7. The template is stored, then every other slot is searched for a duplicate
+   finger. A duplicate deletes the new template and fails the session.
+8. The slot is reported with `verifying` and the firmware calls
    `POST /api/v1/biometric/enrollment-sessions/:uid/complete`.
-7. The member becomes active only after the backend finalizes the enrollment.
+9. The member becomes enrolled only after the backend finalizes the enrollment.
 
-The firmware never uploads or stores raw fingerprint images or templates. It
-keeps only the slot number and session UID in NVS while a stored template is
-waiting for backend confirmation. On reboot, that state is reconciled with the
-backend before any new session is claimed. Failed, cancelled, or expired
-sessions delete the locally stored template; a backend `slot_conflict` response
-is the one case where the local template is left untouched because the backend
-has told the device not to erase another member's slot.
-
-The firmware handles duplicate fingers, two scans that do not match, sensor
-errors, no free slot, NVS failures, backend conflicts, cancellation, expiry,
-and network loss during completion. In the last case it retries completion and
-keeps the NVS recovery record until the session is resolved.
+If the sensor stored a template but the backend did not confirm it, the
+firmware keeps the slot number and session UID in NVS, reports the failure, and
+deletes the template (or retries cleanup until the sensor confirms). On reboot,
+that state is reconciled with the backend before any new session is claimed, so
+an untracked template is never left in the sensor. Failed, cancelled or expired
+sessions delete the locally stored template. A backend `slot_conflict` response
+means the backend recorded someone else's slot; the device never erases a slot
+it does not own for that session.
 
 ## Backend contract
 
@@ -234,23 +220,18 @@ All routes are under `https://<host>/api/v1`. Device routes authenticate with
 | `/api/v1/biometric/readers` | POST | Report the connected entry reader | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-session` | GET | Claim cleanup or active enrollment work | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-sessions/:uid` | GET | Check status, cancellation, or expiry | `X-Device-Token` |
+| `/api/v1/biometric/enrollment-sessions/:uid/claim` | POST | Claim the session before touching the sensor | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-sessions/:uid/progress` | POST | Report two-scan progress | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-sessions/:uid/complete` | POST | Finalize the slot and activate the member | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-sessions/:uid/fail` | POST | Report a sensor or match failure | `X-Device-Token` |
 | `/api/v1/biometric/enrollment-sessions/:uid/cleanup` | POST | Acknowledge local slot cleanup | `X-Device-Token` |
-| `/api/v1/biometric/enrollments` | GET | Cache slot-to-member mappings | `X-Device-Token` |
-| `/api/v1/biometric/submit-event` | POST | Submit `fingerprint_scan` events | `X-Device-Token` or HMAC signature |
+| `/api/v1/biometric/door-access` | POST | Map a slot to a member and authorize access | `X-Device-Token` |
 | `/api/v1/biometric/status` | GET | Device status / pending event count | `X-Device-Token` |
-| `/api/v1/biometric/sync-events` | POST | Fetch events for the device | `X-Device-Token` |
 
-The legacy `POST /api/v1/biometric/enroll-fingerprint` route remains in the
-backend for compatibility, but the current firmware uses the session workflow
-above.
-
-There is no `/api/v1/device/authenticate`, `/api/v1/device/heartbeat`,
-`/api/v1/biometric/event`, `/api/v1/biometric/enroll` or
-`/api/v1/biometric/sync` route in the Go backend. The firmware uses the actual
-routes above.
+The backend also exposes `/api/v1/biometric/enrollments`, `/submit-event`,
+`/enroll-fingerprint` and `/sync-events` for other clients; this sketch does not
+call them. Door access creates the audit entry and the attendance event on the
+backend, so the firmware does not submit attendance events itself.
 
 Authentication response:
 
@@ -269,8 +250,18 @@ Authentication response:
 }
 ```
 
-Allowed event types on `/submit-event`: `fingerprint_scan`,
-`finger_mismatch`, `enrollment_success`, `enrollment_failure`.
+Door-access response (the door opens only for `"authorized": true`):
+
+```json
+{
+  "success": true,
+  "authorized": true,
+  "duplicate": false,
+  "reason": "authorized",
+  "unlock_seconds": 5,
+  "member": { "id": 7, "name": "...", "login_id": "..." }
+}
+```
 
 ## Safety behaviour
 
@@ -283,42 +274,49 @@ Allowed event types on `/submit-event`: `fingerprint_scan`,
 - **Exit is local and immediate.** The GPIO33 button de-energises the relay
   without Wi-Fi or backend access and the normal `DOOR_OPEN_MS` timer re-locks
   the door automatically.
-- **Exit never creates a member logout event.** The button does not call the
-  backend and does not submit a biometric event.
-- Attendance is preserved through the backend: an authorized door-access request
-  creates a `fingerprint_scan` device event and the existing
-  `biometric.process_event` job records the login/logout.
+- **The exit button is not an emergency button and never creates a member
+  logout event.** It does not call the backend.
+- **The exit button is serviced on every loop iteration.** `checkExitButton()`
+  and `updateDoor()` run before any network or sensor work, and no `delay()` in
+  the sketch waits out the unlock timer. Backend calls and sensor searches are
+  bounded (8s HTTP timeout, 4s full-library search) and the button is polled
+  again immediately afterwards.
+- Attendance is preserved through the backend: an authorized door-access
+  request creates a `fingerprint_scan` device event and the existing
+  `biometric.process_event` job records the login.
 
 ## Verification status
 
-- `pio run`: **passes** (ESP32 image built).
-- `pio test -e native`: **passes** (5 two-scan state-machine tests).
+- `pio run`: **passes** (ESP32 image built, the sketch is compiled through the
+  Arduino `.ino` preprocessor).
+- Flash: about 93% of the 1.3 MB app partition; RAM about 15%.
 - Backend contract inspected from `backend/internal/api/member_enrollment.go`,
-  `backend/internal/api/biometric.go` and
-  `backend/internal/api/attendance_biometric_tasks.go`.
-- **No physical hardware testing has been performed.** R307S readers, the
-  relay, the exit button, LEDs and buzzer are untested on real hardware.
-- Backend integration was compiled against the real routes but not exercised
-  against a running backend from the device.
+  `backend/internal/api/door_access.go` and `backend/internal/api/biometric.go`.
+- The former native `pio test -e native` state-machine tests were removed
+  together with the modular `enrollment_flow.h` / `reader_readiness.h` files
+  they included; the state machine now lives inside the sketch and is exercised
+  through the build and on-device serial diagnostics.
+- **No physical hardware testing has been performed.** The R307S, relay, exit
+  button, LEDs and buzzer are untested on real hardware.
 
 ## Troubleshooting
 
-1. **Wi-Fi never connects** — check `config.local.h`; the firmware retries
-   every `WIFI_RETRY_INTERVAL` without blocking the loop.
+1. **Wi-Fi never connects** — check the configuration block; the firmware
+   retries every `WIFI_RETRY_INTERVAL` without blocking the loop.
 2. **`Device auth HTTP 401`** — `DEVICE_API_KEY` does not match a provisioned,
    active device in the backend.
-3. **Enrollment never starts** — confirm `ENROLLMENT_READER` is
-   `ENROLLMENT_READER_LOGIN` (the default), the entry reader was detected at
-   boot, and the member is still `pending_enrollment`.
+3. **Enrollment never starts** — check the serial log for
+   `Enrollment poll: none`, confirm the reader was detected at boot
+   (`Fingerprint reader: password verified`), and that the backend reports the
+   reader as connected.
 4. **Entry denied, fingerprint not enrolled** — the finger matches on the
    sensor but the slot is not registered to an active member on this device, so
    the backend keeps the door locked by design.
-5. **No fingerprint detected** — verify the entry reader UART pins and that the
-   reader is powered; sensors run at 57600 baud.
+5. **No fingerprint detected** — verify the UART pins (RX 16, TX 17), the
+   57600 baud rate and reader power. `R307S GenImg:` diagnostics in the serial
+   log show whether the module answers at all.
 6. **Door never unlocks** — confirm the relay active levels and that the device
-   is authenticated and enrolled.
+   is authenticated and the slot is enrolled.
 7. **Enrollment stuck after a reboot** — the firmware reconciles the NVS
-   session UID and slot before claiming new work. Check the serial log for
-   `Pending enrollment recovery` and sensor cleanup errors.
-8. **Flash usage** — the build uses about 90% of the 1.3 MB app partition;
-   keep an eye on it when adding libraries.
+   session UID and slot before claiming new work. Look for
+   `Pending enrollment recovery` and cleanup errors in the serial log.

@@ -229,7 +229,7 @@ curl -X POST https://<host>/api/v1/devices \
 }
 ```
 
-The response is sent with `Cache-Control: no-store`. Copy `api_key` into the firmware's `config.local.h` immediately; it cannot be retrieved later. If it is lost, rotate the key.
+The response is sent with `Cache-Control: no-store`. Copy `api_key` into the firmware's configuration block (`firmware/esp32/doorlock/doorlock.ino` or its git-ignored `doorlock_secrets.h`) immediately; it cannot be retrieved later. If it is lost, rotate the key.
 
 Rotation:
 
