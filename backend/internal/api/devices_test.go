@@ -105,3 +105,35 @@ func TestSerializeDeviceOmitsSecrets(t *testing.T) {
 		t.Fatalf("expected active status, got %v", serialized["status"])
 	}
 }
+
+func TestDeviceIsOnlineUsesStaleThreshold(t *testing.T) {
+	now := time.Now().UTC()
+	fresh := now.Add(-30 * time.Second)
+	stale := now.Add(-deviceHeartbeatStaleAfter - time.Second)
+
+	if !deviceIsOnline(&fresh, now) {
+		t.Fatal("a 30s-old heartbeat must count as online")
+	}
+	if deviceIsOnline(&stale, now) {
+		t.Fatal("a heartbeat older than the stale threshold must count as offline")
+	}
+	if deviceIsOnline(nil, now) {
+		t.Fatal("a device that has never reported must not count as online")
+	}
+}
+
+func TestNormalizeDeviceReaderReadiness(t *testing.T) {
+	cases := map[string]string{
+		"ready":              "ready",
+		"  ENROLLING ":       "enrolling",
+		"waiting_for_finger": "waiting_for_finger",
+		"capture_failed":     "capture_failed",
+		"":                   "not_ready",
+		"unexpected":         "not_ready",
+	}
+	for input, expected := range cases {
+		if got := normalizeDeviceReaderReadiness(input); got != expected {
+			t.Fatalf("normalizeDeviceReaderReadiness(%q) = %q, want %q", input, got, expected)
+		}
+	}
+}

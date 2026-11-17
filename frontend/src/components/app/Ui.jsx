@@ -1,5 +1,8 @@
 import { useId, useState } from "react";
 import { AlertIcon, CheckIcon, EyeIcon, EyeOffIcon, InfoIcon, WarningIcon } from "./AppIcons";
+import { ThreeDotLoader } from "./ThreeDotLoader";
+
+export { ThreeDotLoader };
 
 export function Spinner({ className = "h-4 w-4" }) {
   return <span className={`lab-spinner ${className}`} aria-hidden="true" />;
@@ -18,12 +21,16 @@ export function AppButton({
   return (
     <button
       type={type}
-      className={`lab-button lab-button--${variant} lab-button--${size} ${className}`}
+      className={`lab-button lab-button--${variant} lab-button--${size} ${loading ? "lab-button--loading" : ""} ${className}`}
       disabled={disabled || loading}
+      aria-busy={loading ? "true" : undefined}
       {...props}
     >
-      {loading && <Spinner className={size === "sm" ? "h-3.5 w-3.5" : "h-4 w-4"} />}
-      {children}
+      {loading ? (
+        <ThreeDotLoader size={size === "sm" ? "sm" : "md"} />
+      ) : (
+        children
+      )}
     </button>
   );
 }
@@ -457,8 +464,8 @@ export function PageLoading({ label = "Loading Edwins Lab" }) {
   return (
     <div className="lab-boot" role="status">
       <div className="lab-boot__mark">EL</div>
-      <p>{label}</p>
-      <Spinner className="h-5 w-5" />
+      {label && <p>{label}</p>}
+      <ThreeDotLoader size="md" label={label} />
     </div>
   );
 }

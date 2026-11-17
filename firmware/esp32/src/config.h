@@ -84,13 +84,41 @@
 // How often the controller asks the backend for enrollment work and checks
 // whether an active session was cancelled or expired.
 #ifndef ENROLLMENT_POLL_INTERVAL
-#define ENROLLMENT_POLL_INTERVAL 2000UL
+#define ENROLLMENT_POLL_INTERVAL 1000UL
+#endif
+// Back off when the backend has no enrollment work, so an idle controller does
+// not issue a claim request every second.
+#ifndef ENROLLMENT_IDLE_POLL_INTERVAL
+#define ENROLLMENT_IDLE_POLL_INTERVAL 2000UL
 #endif
 #ifndef ENROLLMENT_RECONCILE_INTERVAL
-#define ENROLLMENT_RECONCILE_INTERVAL 5000UL
+#define ENROLLMENT_RECONCILE_INTERVAL 10000UL
 #endif
+// Retry cadence for finalization and cleanup. These calls are short; keeping
+// them on a separate interval avoids polling cancellation checks too often.
+#ifndef ENROLLMENT_COMPLETE_RETRY_INTERVAL
+#define ENROLLMENT_COMPLETE_RETRY_INTERVAL 3000UL
+#endif
+#ifndef ENROLLMENT_CLEANUP_RETRY_INTERVAL
+#define ENROLLMENT_CLEANUP_RETRY_INTERVAL 3000UL
+#endif
+// Brief pause before login scanning resumes so the finger still resting on the
+// sensor after enrollment is not immediately treated as a door login.
+#ifndef ENROLLMENT_RESUME_COOLDOWN_MS
+#define ENROLLMENT_RESUME_COOLDOWN_MS 1500UL
+#endif
+// Finger-presence polling while the enrollment state machine owns the sensor.
 #ifndef ENROLLMENT_SCAN_INTERVAL
-#define ENROLLMENT_SCAN_INTERVAL 300UL
+#define ENROLLMENT_SCAN_INTERVAL 200UL
+#endif
+// One quick probe confirms the sensor answers before asking for a finger.
+#ifndef ENROLLMENT_PREFLIGHT_INTERVAL
+#define ENROLLMENT_PREFLIGHT_INTERVAL 250UL
+#endif
+// Enrollment calls only need to reach the backend promptly; a long blocking
+// network timeout would stall finger detection on the single-threaded loop.
+#ifndef ENROLLMENT_HTTP_TIMEOUT_MS
+#define ENROLLMENT_HTTP_TIMEOUT_MS 4000
 #endif
 
 // How often the controller refreshes the backend's view of the connected

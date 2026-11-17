@@ -249,7 +249,8 @@ bool submitFingerprintEnrollment(int64_t memberId,
 namespace {
 
 bool performDeviceRequest(const char* method, const String& path,
-                          const String& body, String& response, int& httpCode) {
+                          const String& body, String& response, int& httpCode,
+                          int timeoutMs = 8000) {
   response = "";
   httpCode = 0;
   if (!isWifiConnected()) {
@@ -260,7 +261,7 @@ bool performDeviceRequest(const char* method, const String& path,
   }
 
   HTTPClient http;
-  http.setTimeout(8000);
+  http.setTimeout(timeoutMs);
   String url = String(API_BASE_URL) + path;
   if (!http.begin(url)) {
     http.end();
@@ -399,7 +400,8 @@ bool fetchEnrollmentCommand(EnrollmentSessionInfo& out, String& action, int& htt
   out = EnrollmentSessionInfo();
   action = "";
   String response;
-  if (!performDeviceRequest("GET", "/api/v1/biometric/enrollment-session", "", response, httpCode)) {
+  if (!performDeviceRequest("GET", "/api/v1/biometric/enrollment-session", "", response,
+                            httpCode, ENROLLMENT_HTTP_TIMEOUT_MS)) {
     return false;
   }
   JsonDocument doc;
@@ -421,7 +423,8 @@ bool fetchEnrollmentSession(const String& sessionUid, EnrollmentSessionInfo& out
   }
   String response;
   String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid;
-  if (!performDeviceRequest("GET", path, "", response, httpCode)) {
+  if (!performDeviceRequest("GET", path, "", response, httpCode,
+                            ENROLLMENT_HTTP_TIMEOUT_MS)) {
     return false;
   }
   JsonDocument doc;
@@ -454,7 +457,8 @@ bool updateEnrollmentProgress(const String& sessionUid, const String& status,
   serializeJson(request, body);
   String response;
   String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/progress";
-  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+  if (!performDeviceRequest("POST", path, body, response, httpCode,
+                            ENROLLMENT_HTTP_TIMEOUT_MS)) {
     return false;
   }
   JsonDocument doc;
@@ -474,7 +478,8 @@ bool completeEnrollment(const String& sessionUid, int slot,
   serializeJson(request, body);
   String response;
   String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/complete";
-  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+  if (!performDeviceRequest("POST", path, body, response, httpCode,
+                            ENROLLMENT_HTTP_TIMEOUT_MS)) {
     return false;
   }
   JsonDocument doc;
@@ -498,7 +503,8 @@ bool failEnrollment(const String& sessionUid, int slot, const String& errorCode,
   serializeJson(request, body);
   String response;
   String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/fail";
-  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+  if (!performDeviceRequest("POST", path, body, response, httpCode,
+                            ENROLLMENT_HTTP_TIMEOUT_MS)) {
     return false;
   }
   JsonDocument doc;
@@ -519,7 +525,8 @@ bool acknowledgeEnrollmentCleanup(const String& sessionUid, int slot,
   serializeJson(request, body);
   String response;
   String path = String("/api/v1/biometric/enrollment-sessions/") + sessionUid + "/cleanup";
-  if (!performDeviceRequest("POST", path, body, response, httpCode)) {
+  if (!performDeviceRequest("POST", path, body, response, httpCode,
+                            ENROLLMENT_HTTP_TIMEOUT_MS)) {
     return false;
   }
   JsonDocument doc;

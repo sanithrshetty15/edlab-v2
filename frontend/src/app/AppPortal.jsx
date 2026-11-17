@@ -24,6 +24,7 @@ import TasksPage from "../pages/app/admin/TasksPage";
 import InventoryPage from "../pages/app/admin/InventoryPage";
 import BorrowingPage from "../pages/app/admin/BorrowingPage";
 import AnalyticsPage from "../pages/app/admin/AnalyticsPage";
+import DevicesPage from "../pages/app/admin/DevicesPage";
 import NotFoundPage from "../pages/app/NotFoundPage";
 import { navigate, usePathname } from "../utils/router";
 
@@ -34,6 +35,7 @@ const ADMIN_ROUTES = new Set([
   "/app/inventory",
   "/app/borrowing",
   "/app/analytics",
+  "/app/devices",
 ]);
 
 function AccessDenied() {
@@ -87,6 +89,8 @@ function routeContent(pathname, isAdmin) {
       return isAdmin ? <BorrowingPage /> : <AccessDenied />;
     case "/app/analytics":
       return isAdmin ? <AnalyticsPage /> : <AccessDenied />;
+    case "/app/devices":
+      return isAdmin ? <DevicesPage /> : <AccessDenied />;
     default:
       return <NotFoundPage />;
   }

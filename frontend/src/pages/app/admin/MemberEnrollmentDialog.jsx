@@ -23,42 +23,43 @@ import MemberRegistrationProgress from "./MemberRegistrationProgress";
 const ENROLLMENT_STEPS = [
   {
     status: "awaiting_sensor",
-    title: "Enrollment reader ready",
-    description: "The configured R307S reader will claim this session shortly.",
+    title: "Waiting for the ESP32",
+    description: "The enrollment command is queued; the controller claims it within a second.",
   },
   {
     status: "waiting_first_scan",
-    title: "First fingerprint scan",
-    description: "Place the member's finger on the enrollment sensor.",
+    title: "Place the finger for the first scan",
+    description: "The reader is initialised. Place the member's finger on the sensor.",
   },
   {
     status: "first_scan_captured",
-    title: "First scan captured",
-    description: "Keep the finger still while the sensor processes the image.",
+    title: "First fingerprint captured",
+    description: "The first sample is stored on the sensor. Lift the finger when prompted.",
   },
   {
     status: "waiting_for_removal",
-    title: "Remove finger",
+    title: "Remove the finger",
     description: "Lift the finger so the sensor is ready for the second scan.",
   },
   {
     status: "waiting_second_scan",
-    title: "Second fingerprint scan",
-    description: "Place the same finger on the sensor again.",
+    title: "Place the same finger again",
+    description: "Place the same finger on the sensor a second time.",
   },
   {
     status: "second_scan_captured",
-    title: "Second scan captured",
-    description: "The reader is checking that both scans match.",
+    title: "Second fingerprint captured",
+    description: "Both samples are captured. The reader is comparing them now.",
   },
   {
     status: "verifying",
-    title: "Verifying and saving",
-    description: "The reader is saving the template and confirming the slot.",
+    title: "Matching and storing",
+    description:
+      "The reader matches both samples, stores the template in its slot and confirms the slot with the backend.",
   },
   {
     status: "finalized",
-    title: "Enrollment complete",
+    title: "Registration complete",
     description: "The member account is now active.",
   },
 ];
@@ -306,6 +307,11 @@ export default function MemberEnrollmentDialog({
 
     const poll = async () => {
       if (stopped || cancelInFlightRef.current) return;
+      // Do not poll a hidden tab; the next scheduled tick resumes the loop.
+      if (typeof document !== "undefined" && document.hidden) {
+        schedule();
+        return;
+      }
       controller = new AbortController();
       pollAbortRef.current = controller;
       try {

@@ -20,6 +20,7 @@ import {
   SegmentedControl,
   Tabs,
   TextInput,
+  ThreeDotLoader,
 } from "../components/app/Ui";
 import { navigate } from "../utils/router";
 
@@ -401,8 +402,8 @@ export default function LoginPage({ sessionError, expired = false }) {
                   loading={submitting}
                   disabled={submitting}
                 >
-                  {submitting ? "Verifying…" : "Verify and sign in"}
-                  {!submitting && <ArrowRightIcon className="h-4 w-4" />}
+                  Verify and sign in
+                  <ArrowRightIcon className="h-4 w-4" />
                 </AppButton>
 
                 <div className="login-otp-actions">
@@ -480,7 +481,10 @@ export default function LoginPage({ sessionError, expired = false }) {
 
               {googleCompleting && (
                 <Alert tone="info" title="Completing Google sign-in">
-                  <p>Verifying your Google account and creating your admin session.</p>
+                  <div className="login-completing-state">
+                    <ThreeDotLoader size="sm" />
+                    <span>Verifying your Google account and creating your admin session…</span>
+                  </div>
                 </Alert>
               )}
 
@@ -549,6 +553,26 @@ export default function LoginPage({ sessionError, expired = false }) {
                       required
                       disabled={submitting}
                     />
+
+                    <div className="login-form__meta">
+                      <span>
+                        <LockIcon className="h-3.5 w-3.5" /> Encrypted in transit
+                      </span>
+                      <span>
+                        <ShieldIcon className="h-3.5 w-3.5" /> Server-side sessions
+                      </span>
+                    </div>
+
+                    <AppButton
+                      type="submit"
+                      size="lg"
+                      className="login-submit"
+                      loading={submitting}
+                      disabled={submitting}
+                    >
+                      Sign in
+                      <ArrowRightIcon className="h-4 w-4" />
+                    </AppButton>
                   </>
                 ) : (
                   <>
@@ -578,10 +602,30 @@ export default function LoginPage({ sessionError, expired = false }) {
                       </div>
                     </Field>
 
+                    <div className="login-form__meta">
+                      <span>
+                        <LockIcon className="h-3.5 w-3.5" /> Encrypted in transit
+                      </span>
+                      <span>
+                        <ShieldIcon className="h-3.5 w-3.5" /> Server-side sessions
+                      </span>
+                    </div>
+
+                    <AppButton
+                      type="submit"
+                      size="lg"
+                      className="login-submit"
+                      loading={submitting}
+                      disabled={submitting}
+                    >
+                      Send verification code
+                      <ArrowRightIcon className="h-4 w-4" />
+                    </AppButton>
+
                     {isApiConfigured() && (
-                      <>
-                        <div className="login-provider-divider" aria-hidden="true">
-                          <span>or</span>
+                      <div className="login-alternate-auth">
+                        <div className="login-provider-divider" role="separator" aria-label="Alternative sign-in options">
+                          <span>OR</span>
                         </div>
                         <a
                           className={`lab-button lab-button--outline lab-button--lg login-google-button ${
@@ -600,38 +644,10 @@ export default function LoginPage({ sessionError, expired = false }) {
                         <p className="login-google-note">
                           Only existing Edwins Lab administrators can use Google sign-in.
                         </p>
-                      </>
+                      </div>
                     )}
                   </>
                 )}
-
-                <div className="login-form__meta">
-                  <span>
-                    <LockIcon className="h-3.5 w-3.5" /> Encrypted in transit
-                  </span>
-                  <span>
-                    <ShieldIcon className="h-3.5 w-3.5" /> Server-side sessions
-                  </span>
-                </div>
-
-                <AppButton
-                  type="submit"
-                  size="lg"
-                  className="login-submit"
-                  loading={submitting}
-                  disabled={submitting}
-                >
-                  {submitting
-                    ? googleCompleting
-                      ? "Completing Google sign-in…"
-                      : mode === "admin"
-                        ? "Requesting code…"
-                        : "Signing in…"
-                    : mode === "admin"
-                      ? "Send verification code"
-                      : "Sign in"}
-                  {!submitting && <ArrowRightIcon className="h-4 w-4" />}
-                </AppButton>
 
                 <p className="login-help">
                   Forgot your password?{" "}

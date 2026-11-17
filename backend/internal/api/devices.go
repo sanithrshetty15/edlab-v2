@@ -19,7 +19,15 @@ import (
 const (
 	deviceStatusActive  = "active"
 	deviceStatusRevoked = "revoked"
+
+	// The firmware sends a heartbeat every 30s; three missed beats means the
+	// controller is offline. A stale database row must never read as online.
+	deviceHeartbeatStaleAfter = 90 * time.Second
 )
+
+func deviceIsOnline(lastSeen *time.Time, now time.Time) bool {
+	return lastSeen != nil && !lastSeen.IsZero() && now.Sub(lastSeen.UTC()) <= deviceHeartbeatStaleAfter
+}
 
 var (
 	deviceTypePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,39}$`)
@@ -84,6 +92,7 @@ func serializeDevice(device *models.DeviceRegistration) gin.H {
 		"name":         device.Name,
 		"device_type":  device.DeviceType,
 		"status":       device.Status,
+		"online":       deviceIsOnline(device.LastSeenAt, time.Now().UTC()),
 		"last_seen_at": device.LastSeenAt,
 		"created_at":   device.CreatedAt,
 		"updated_at":   device.UpdatedAt,
@@ -189,18 +198,110 @@ func (s *Server) provisionDevice(c *gin.Context) {
 }
 
 func (s *Server) listDevices(c *gin.Context) {
+	ctx := c.Request.Context()
 	var devices []models.DeviceRegistration
-	if err := s.DB.WithContext(c.Request.Context()).
+	if err := s.DB.WithContext(ctx).
 		Order("created_at DESC, id DESC").Find(&devices).Error; err != nil {
 		s.Log.Error("device list failed", "error", err)
 		fail(c, http.StatusInternalServerError, "Unable to load devices")
 		return
 	}
+
+	now := time.Now().UTC()
 	items := make([]gin.H, 0, len(devices))
-	for i := range devices {
-		items = append(items, serializeDevice(&devices[i]))
+	if len(devices) == 0 {
+		c.JSON(http.StatusOK, gin.H{
+			"success":                  true,
+			"devices":                  items,
+			"server_time":              now,
+			"online_threshold_seconds": int(deviceHeartbeatStaleAfter.Seconds()),
+		})
+		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "devices": items})
+
+	deviceIDs := make([]int64, 0, len(devices))
+	for i := range devices {
+		deviceIDs = append(deviceIDs, devices[i].ID)
+	}
+
+	// One query per relation keeps the 4-second admin poll cheap.
+	var readers []models.DeviceReader
+	if err := s.DB.WithContext(ctx).
+		Where("device_registration_id IN ?", deviceIDs).
+		Order("reader_key ASC").Find(&readers).Error; err != nil {
+		s.Log.Error("device reader list failed", "error", err)
+		fail(c, http.StatusInternalServerError, "Unable to load devices")
+		return
+	}
+	readersByDevice := make(map[int64][]gin.H, len(devices))
+	for i := range readers {
+		reader := readers[i]
+		available := reader.Connected && enrollmentReaderIsFresh(reader.LastSeenAt, now)
+		readersByDevice[reader.DeviceRegistrationID] = append(
+			readersByDevice[reader.DeviceRegistrationID],
+			serializeEnrollmentReader(reader, available),
+		)
+	}
+
+	var sessions []models.MemberEnrollmentSession
+	if err := s.DB.WithContext(ctx).
+		Where("device_registration_id IN ? AND is_active = true", deviceIDs).
+		Order("id ASC").Find(&sessions).Error; err != nil {
+		s.Log.Error("device enrollment list failed", "error", err)
+		fail(c, http.StatusInternalServerError, "Unable to load devices")
+		return
+	}
+	memberIDs := make([]int64, 0, len(sessions))
+	for i := range sessions {
+		memberIDs = append(memberIDs, sessions[i].MemberID)
+	}
+	membersByID := make(map[int64]models.Member, len(memberIDs))
+	if len(memberIDs) > 0 {
+		var members []models.Member
+		if err := s.DB.WithContext(ctx).Find(&members, memberIDs).Error; err != nil {
+			s.Log.Error("device enrollment member lookup failed", "error", err)
+			fail(c, http.StatusInternalServerError, "Unable to load devices")
+			return
+		}
+		for i := range members {
+			membersByID[members[i].ID] = members[i]
+		}
+	}
+	enrollmentByDevice := make(map[int64]gin.H, len(sessions))
+	for i := range sessions {
+		session := sessions[i]
+		if session.DeviceRegistrationID == nil {
+			continue
+		}
+		if _, exists := enrollmentByDevice[*session.DeviceRegistrationID]; exists {
+			continue
+		}
+		var member *models.Member
+		if loaded, ok := membersByID[session.MemberID]; ok {
+			member = &loaded
+		}
+		enrollmentByDevice[*session.DeviceRegistrationID] = serializeEnrollmentSession(&session, member, nil)
+	}
+
+	for i := range devices {
+		item := serializeDevice(&devices[i])
+		if list, ok := readersByDevice[devices[i].ID]; ok {
+			item["readers"] = list
+		} else {
+			item["readers"] = []gin.H{}
+		}
+		if enrollment, ok := enrollmentByDevice[devices[i].ID]; ok {
+			item["enrollment"] = enrollment
+		}
+		items = append(items, item)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":                  true,
+		"devices":                  items,
+		"server_time":              now,
+		"online_threshold_seconds": int(deviceHeartbeatStaleAfter.Seconds()),
+	})
 }
 
 func (s *Server) showDevice(c *gin.Context) {

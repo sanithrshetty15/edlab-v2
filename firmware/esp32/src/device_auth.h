@@ -1,7 +1,10 @@
+#pragma once
+#include <Arduino.h>
 #ifndef DEVICE_AUTH_H
 #define DEVICE_AUTH_H
 
-#include <Arduino.h>
+#include <cstdint>
+#include <string>
 
 // A backend enrolment mapped onto a local R307S template slot.
 struct EnrollmentInfo {

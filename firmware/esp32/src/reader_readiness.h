@@ -12,6 +12,7 @@ enum class ReaderReadiness : uint8_t {
   WAITING_FOR_FINGER,
   FINGER_DETECTED,
   CAPTURE_FAILED,
+  ENROLLING,
 };
 
 inline const char* readerReadinessStatus(ReaderReadiness readiness) {
@@ -28,6 +29,8 @@ inline const char* readerReadinessStatus(ReaderReadiness readiness) {
       return "finger_detected";
     case ReaderReadiness::CAPTURE_FAILED:
       return "capture_failed";
+    case ReaderReadiness::ENROLLING:
+      return "enrolling";
   }
   return "not_ready";
 }
@@ -38,6 +41,7 @@ inline bool readerReadinessIsConnected(ReaderReadiness readiness) {
     case ReaderReadiness::READY:
     case ReaderReadiness::WAITING_FOR_FINGER:
     case ReaderReadiness::FINGER_DETECTED:
+    case ReaderReadiness::ENROLLING:
       return true;
     case ReaderReadiness::NOT_READY:
     case ReaderReadiness::CAPTURE_FAILED:

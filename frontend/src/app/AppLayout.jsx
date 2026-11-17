@@ -18,6 +18,7 @@ import {
   MenuIcon,
   MessageIcon,
   SettingsIcon,
+  ShieldIcon,
   UserIcon,
   UsersIcon,
   ClockIcon,
@@ -60,6 +61,7 @@ const ADMIN_GROUPS = [
       { to: "/app/dashboard", label: "Dashboard", icon: DashboardIcon },
       { to: "/app/members", label: "Members", icon: UsersIcon },
       { to: "/app/attendance", label: "Attendance", icon: ClockIcon },
+      { to: "/app/devices", label: "Devices", icon: ShieldIcon },
     ],
   },
   {
@@ -105,6 +107,7 @@ const PAGE_TITLES = {
   "/app/inventory": "Inventory",
   "/app/borrowing": "Borrowing",
   "/app/analytics": "Analytics",
+  "/app/devices": "Devices",
 };
 
 function isActive(pathname, to) {

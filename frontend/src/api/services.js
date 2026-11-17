@@ -75,6 +75,10 @@ export const membersManagementApi = {
   deactivate: (id) => api.delete(`${BASE}/members-management/${id}`),
 };
 
+export const devicesApi = {
+  list: (options) => api.get(`${BASE}/devices`, options),
+};
+
 export const attendanceApi = {
   list: (params) => api.get(`${BASE}/attendance`, { query: params }),
   get: (id) => api.get(`${BASE}/attendance/${id}`),

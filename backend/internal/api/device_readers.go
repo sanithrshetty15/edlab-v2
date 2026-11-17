@@ -61,14 +61,39 @@ func enrollmentReaderIsFresh(lastSeen *time.Time, now time.Time) bool {
 }
 
 func serializeEnrollmentReader(reader models.DeviceReader, available bool) gin.H {
+	readiness := strings.TrimSpace(reader.Readiness)
+	if readiness == "" {
+		readiness = "not_ready"
+	}
 	return gin.H{
 		"key":          reader.ReaderKey,
 		"label":        reader.Label,
 		"uart":         reader.UART,
 		"connected":    available,
 		"available":    available,
+		"readiness":    readiness,
 		"last_seen_at": reader.LastSeenAt,
 	}
+}
+
+// Reader readiness values reported by the ESP32. Unknown values are rejected so
+// the admin UI never has to render an arbitrary sensor string.
+var deviceReaderReadinessValues = map[string]bool{
+	"not_ready":          true,
+	"initializing":       true,
+	"ready":              true,
+	"waiting_for_finger": true,
+	"finger_detected":    true,
+	"capture_failed":     true,
+	"enrolling":          true,
+}
+
+func normalizeDeviceReaderReadiness(value string) string {
+	readiness := strings.ToLower(strings.TrimSpace(value))
+	if deviceReaderReadinessValues[readiness] {
+		return readiness
+	}
+	return "not_ready"
 }
 
 func (s *Server) reportDeviceReaders(c *gin.Context) {
@@ -83,6 +108,7 @@ func (s *Server) reportDeviceReaders(c *gin.Context) {
 			Label     string `json:"label"`
 			UART      int    `json:"uart"`
 			Connected bool   `json:"connected"`
+			Readiness string `json:"readiness"`
 		} `json:"readers"`
 	}
 	if !bindJSON(c, &request) {
@@ -125,6 +151,7 @@ func (s *Server) reportDeviceReaders(c *gin.Context) {
 			Label:                label,
 			UART:                 uart,
 			Connected:            item.Connected,
+			Readiness:            normalizeDeviceReaderReadiness(item.Readiness),
 			LastSeenAt:           &lastSeen,
 			UpdatedAt:            now,
 		})
@@ -140,7 +167,7 @@ func (s *Server) reportDeviceReaders(c *gin.Context) {
 			if err := tx.Clauses(clause.OnConflict{
 				Columns: []clause.Column{{Name: "device_registration_id"}, {Name: "reader_key"}},
 				DoUpdates: clause.AssignmentColumns([]string{
-					"label", "uart", "connected", "last_seen_at", "updated_at",
+					"label", "uart", "connected", "readiness", "last_seen_at", "updated_at",
 				}),
 			}).Create(&reader).Error; err != nil {
 				return err

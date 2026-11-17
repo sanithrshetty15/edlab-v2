@@ -2,6 +2,23 @@
 
 namespace {
 
+// Each R30x command has its own worst-case response time. Fast commands keep
+// the previous 1s bound, while search, template creation and storage get the
+// time a real module can need. A single flat timeout made full-library search
+// unreliable without making failures any faster.
+unsigned long responseTimeoutFor(uint8_t command) {
+  switch (command) {
+    case R307S_SEARCH:
+      return 4000; // full 127-template library search
+    case R307S_REGMODEL:
+    case R307S_STORE:
+    case R307S_DELCHAR:
+      return 1500;
+    default:
+      return 1000;
+  }
+}
+
 struct ResponseDiagnostics {
   unsigned long rxBytes = 0;
   bool headerDetected = false;
@@ -133,10 +150,12 @@ bool R307S::execute(uint8_t command, const uint8_t* param, size_t paramLen,
   serial_->write(packet, idx);
   serial_->flush();
 
-  return readResponse(out, maxOut, outLen, command == R307S_GENIMG);
+  return readResponse(out, maxOut, outLen, command == R307S_GENIMG,
+                      responseTimeoutFor(command));
 }
 
-bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen, bool diagnostics) {
+bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen, bool diagnostics,
+                         unsigned long timeoutMs) {
   outLen = 0;
   lastConfirmation_ = R307S_NO_CONFIRMATION;
   ResponseDiagnostics diag;
@@ -147,11 +166,15 @@ bool R307S::readResponse(uint8_t* out, size_t maxOut, size_t& outLen, bool diagn
     return false;
   }
 
+  serial_->setTimeout(timeoutMs);
+
   // Wait for the 0xEF 0x01 header.
   unsigned long start = millis();
   bool haveHeader = false;
-  while (millis() - start < 1000) {
+  while (millis() - start < timeoutMs) {
     if (!serial_->available()) {
+      // Yield to the Wi-Fi/RTOS tasks instead of spinning the CPU.
+      delay(1);
       continue;
     }
     uint8_t b = static_cast<uint8_t>(serial_->read());

@@ -31,7 +31,19 @@
 
 namespace {
 
-enum SystemMode { MODE_IDLE, MODE_ENROLLMENT };
+// Exclusive sensor ownership modes. Only one operation may communicate
+// with the R307S at a time.
+enum class SensorMode : uint8_t {
+  IDLE,
+  LOGIN,
+  ENROLLMENT,
+  ENROLLMENT_CLEANUP,
+  SENSOR_ERROR,
+};
+
+// Current exclusive mode. When ENROLLMENT or ENROLLMENT_CLEANUP is active,
+// login scanning is suspended to prevent interference.
+SensorMode currentMode = SensorMode::IDLE;
 
 // One physical R307S reader handles entry, attendance and fingerprint
 // enrollment. The legacy logout-reader configuration is intentionally unused.
@@ -48,7 +60,12 @@ ReaderReadiness readerReadiness = ReaderReadiness::NOT_READY;
 bool readerReportPending = false;
 bool enrollmentDisabledLogged = false;
 
-enum class SensorActivity { NONE, READINESS, ENROLLMENT };
+// Tracks which activity currently has sensor access.
+enum class SensorActivity : uint8_t {
+  NONE,
+  READINESS,
+  ENROLLMENT,
+};
 
 SensorActivity sensorActivity = SensorActivity::NONE;
 
@@ -59,8 +76,6 @@ struct SensorActivityGuard {
   }
   ~SensorActivityGuard() { sensorActivity = previous; }
 };
-
-SystemMode mode = MODE_IDLE;
 
 bool doorUnlocked = false;
 unsigned long doorOpenedAt = 0;
@@ -74,9 +89,11 @@ unsigned long lastHeartbeat = 0;
 unsigned long lastAuthAttempt = 0;
 unsigned long lastEnrollmentRefresh = 0;
 unsigned long lastEnrollmentPoll = 0;
+unsigned long enrollmentPollInterval = ENROLLMENT_POLL_INTERVAL;
 unsigned long lastReaderReport = 0;
 unsigned long lastReaderReportAttempt = 0;
 unsigned long lastReaderPoll = 0;
+unsigned long sensorResumeAt = 0;
 
 EnrollmentInfo enrollments[MAX_ENROLLMENTS];
 size_t enrollmentCount = 0;
@@ -94,6 +111,8 @@ struct ActiveEnrollment {
   unsigned long lastCompleteAttempt = 0;
   uint8_t scanErrors = 0;
   bool readerPreflightDone = false;
+  bool cleanupPending = false;
+  String terminalReason;
 };
 
 ActiveEnrollment activeEnrollment;
@@ -274,7 +293,19 @@ bool slotIsFree(uint16_t slot, bool& freeSlot) {
 }
 
 bool findFreeSlot(uint16_t& slot) {
+  // Skip slots the backend already maps to a member before probing the sensor.
+  // This avoids a LoadChar round-trip per occupied slot, which dominated the
+  // time spent in the store stage.
+  bool cachedOccupied[128] = {false};
+  for (size_t i = 0; i < enrollmentCount; i++) {
+    if (enrollments[i].valid && enrollments[i].slot >= 1 && enrollments[i].slot <= 127) {
+      cachedOccupied[enrollments[i].slot] = true;
+    }
+  }
   for (uint16_t candidate = 1; candidate <= 127; candidate++) {
+    if (cachedOccupied[candidate]) {
+      continue;
+    }
     bool freeSlot = false;
     if (!slotIsFree(candidate, freeSlot)) {
       return false;
@@ -402,6 +433,13 @@ void setReaderReadiness(ReaderReadiness next) {
   readerReportPending = true;
   Serial.print("Reader readiness: ");
   Serial.println(readerReadinessStatus(readerReadiness));
+}
+
+// Enrollment stage logging is emitted only when the stage actually changes,
+// so the serial monitor stays readable during long waits.
+void logEnrollmentStage(const char* message) {
+  Serial.print("Enrollment: ");
+  Serial.println(message);
 }
 
 void observeReaderImage(bool captured, uint8_t confirmation) {
@@ -544,6 +582,18 @@ void processLoginCapture() {
 }
 
 void pollReaderForLogin() {
+  // Suspend login scanning when enrollment has exclusive sensor ownership.
+  if (currentMode == SensorMode::ENROLLMENT ||
+      currentMode == SensorMode::ENROLLMENT_CLEANUP ||
+      currentMode == SensorMode::SENSOR_ERROR) {
+    return;
+  }
+  if (sensorResumeAt != 0) {
+    if (static_cast<long>(millis() - sensorResumeAt) < 0) {
+      return;
+    }
+    sensorResumeAt = 0;
+  }
   if (sensorActivity != SensorActivity::NONE) {
     return;
   }
@@ -604,19 +654,29 @@ bool acknowledgeCleanup(const String& sessionUid, uint16_t slot) {
 void stopEnrollment(bool success, const String& reason) {
   if (success) {
     successSignal();
+    Serial.println("Enrollment: registration successful");
+    setReaderReadiness(ReaderReadiness::READY);
   } else {
     errorSignal();
-  }
-  if (reason.length() > 0) {
-    Serial.print("Enrollment stopped: ");
-    Serial.println(reason);
-  }
-  if (success) {
-    setReaderReadiness(ReaderReadiness::READY);
+    Serial.print("Enrollment: registration failed - ");
+    Serial.println(reason.length() > 0 ? reason : String("unknown reason"));
   }
   activeEnrollment = ActiveEnrollment();
-  mode = MODE_IDLE;
+  currentMode = SensorMode::IDLE;
   lastEnrollmentPoll = millis();
+  enrollmentPollInterval = ENROLLMENT_POLL_INTERVAL;
+  sensorResumeAt = millis() + ENROLLMENT_RESUME_COOLDOWN_MS;
+  Serial.println("Sensor ownership: IDLE (login scanning resumes after cooldown)");
+}
+
+// Keeps exclusive sensor ownership while a temporary template still has to be
+// removed. Login scanning must not resume until the cleanup succeeds.
+void enterEnrollmentCleanup(const String& reason) {
+  activeEnrollment.active = true;
+  activeEnrollment.cleanupPending = true;
+  activeEnrollment.terminalReason = reason;
+  currentMode = SensorMode::ENROLLMENT_CLEANUP;
+  Serial.println("Enrollment: cleanup required; login scanning stays suspended until the sensor slot is removed");
 }
 
 void handleTerminalEnrollment(const EnrollmentSessionInfo& info, bool deleteLocalTemplate) {
@@ -637,9 +697,24 @@ void handleTerminalEnrollment(const EnrollmentSessionInfo& info, bool deleteLoca
                           ? activeEnrollment.sessionUid
                           : persistedEnrollmentUid;
 
+  String reason = info.status.length() > 0 ? info.status : String("rejected");
+  if (info.errorCode.length() > 0) {
+    reason += " (";
+    reason += info.errorCode;
+    reason += ")";
+  }
+  if (info.errorMessage.length() > 0) {
+    reason += ": ";
+    reason += info.errorMessage;
+  }
+
   if (shouldDelete && slot >= 1) {
     if (!deleteEnrollmentSlot(slot)) {
-      stopEnrollment(false, "cleanup pending");
+      // The template is still on the sensor. Keep exclusive ownership and
+      // retry instead of silently returning to login scanning.
+      activeEnrollment.slot = slot;
+      activeEnrollment.slotStored = true;
+      enterEnrollmentCleanup(reason);
       return;
     }
     if (info.cleanupRequired) {
@@ -648,12 +723,6 @@ void handleTerminalEnrollment(const EnrollmentSessionInfo& info, bool deleteLoca
   }
 
   clearPersistedEnrollment();
-  String reason = info.status.length() > 0 ? info.status : String("rejected");
-  if (info.errorCode.length() > 0) {
-    reason += " (";
-    reason += info.errorCode;
-    reason += ")";
-  }
   stopEnrollment(false, reason);
 }
 
@@ -703,7 +772,7 @@ void attemptEnrollmentCompletion() {
   if (!activeEnrollment.active || activeEnrollment.stage != enrollment_flow::Stage::Finalizing) {
     return;
   }
-  if (millis() - activeEnrollment.lastCompleteAttempt < ENROLLMENT_RECONCILE_INTERVAL) {
+  if (millis() - activeEnrollment.lastCompleteAttempt < ENROLLMENT_COMPLETE_RETRY_INTERVAL) {
     return;
   }
   activeEnrollment.lastCompleteAttempt = millis();
@@ -758,13 +827,17 @@ void failActiveEnrollment(const String& errorCode, const String& message) {
       acknowledgeCleanup(activeEnrollment.sessionUid, activeEnrollment.slot);
     }
   }
-  if (cleared) {
-    clearPersistedEnrollment();
-  } else if (!failureStateSaved) {
-    clearPersistedEnrollment();
-    Serial.println("Enrollment cleanup failed without recovery state; slot may be orphaned");
+  if (!cleared) {
+    // Keep the recovery state and exclusive ownership; the template must be
+    // removed before login scanning can safely resume.
+    enterEnrollmentCleanup(errorCode + ": " + message);
+    return;
   }
-  stopEnrollment(false, errorCode);
+  if (!failureStateSaved) {
+    Serial.println("Enrollment failure state could not be persisted; continuing with backend state");
+  }
+  clearPersistedEnrollment();
+  stopEnrollment(false, errorCode + ": " + message);
 }
 
 bool detectDuplicateFinger(uint16_t ownSlot, bool& duplicate) {
@@ -792,15 +865,57 @@ bool detectDuplicateFinger(uint16_t ownSlot, bool& duplicate) {
   return true;
 }
 
+// A captured first image is converted immediately so a finger that is already
+// on the sensor when enrollment starts is not wasted.
+void completeFirstCapture() {
+  activeEnrollment.scanErrors = 0;
+  setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
+  if (!enrollmentReader->img2tz(static_cast<uint8_t>(1))) {
+    setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
+    failActiveEnrollment("first_scan_failed", "Unable to process the first fingerprint image");
+    return;
+  }
+  activeEnrollment.stage =
+      enrollment_flow::next(activeEnrollment.stage, enrollment_flow::Event::FirstCaptured);
+  logEnrollmentStage("first fingerprint captured; remove the finger");
+  buzzPattern(1);
+  reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+}
+
 void processActiveEnrollment() {
   if (!activeEnrollment.active) {
-    mode = MODE_IDLE;
+    if (currentMode != SensorMode::IDLE) {
+      currentMode = SensorMode::IDLE;
+      sensorResumeAt = millis() + ENROLLMENT_RESUME_COOLDOWN_MS;
+      Serial.println("Sensor ownership: IDLE (login scanning resumes after cooldown)");
+    }
     return;
   }
   if (sensorActivity != SensorActivity::NONE) {
     return;
   }
   SensorActivityGuard guard(SensorActivity::ENROLLMENT);
+
+  if (activeEnrollment.cleanupPending) {
+    if (millis() - activeEnrollment.lastScanAt < ENROLLMENT_CLEANUP_RETRY_INTERVAL) {
+      return;
+    }
+    activeEnrollment.lastScanAt = millis();
+    uint16_t cleanupSlot =
+        activeEnrollment.slotStored ? activeEnrollment.slot : persistedEnrollmentSlot;
+    if (cleanupSlot >= 1 && !deleteEnrollmentSlot(cleanupSlot)) {
+      Serial.println("Enrollment: cleanup retry failed; sensor ownership retained");
+      return;
+    }
+    if (cleanupSlot >= 1 && activeEnrollment.sessionUid.length() > 0) {
+      acknowledgeCleanup(activeEnrollment.sessionUid, cleanupSlot);
+    }
+    clearPersistedEnrollment();
+    String reason = activeEnrollment.terminalReason;
+    activeEnrollment.cleanupPending = false;
+    stopEnrollment(false, reason);
+    return;
+  }
 
   if (millis() - activeEnrollment.lastStatusCheck >= ENROLLMENT_RECONCILE_INTERVAL) {
     activeEnrollment.lastStatusCheck = millis();
@@ -817,13 +932,14 @@ void processActiveEnrollment() {
 
   if (!activeEnrollment.readerPreflightDone &&
       activeEnrollment.stage == enrollment_flow::Stage::WaitingFirstScan) {
-    if (millis() - activeEnrollment.lastScanAt < READER_POLL_INTERVAL) {
+    if (millis() - activeEnrollment.lastScanAt < ENROLLMENT_PREFLIGHT_INTERVAL) {
       return;
     }
     activeEnrollment.lastScanAt = millis();
     if (enrollmentReader->getImage(nullptr)) {
-      setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
-      activeEnrollment.scanErrors = 0;
+      // The finger is already present: use this capture as the first scan.
+      activeEnrollment.readerPreflightDone = true;
+      completeFirstCapture();
       return;
     }
 
@@ -832,6 +948,7 @@ void processActiveEnrollment() {
       activeEnrollment.scanErrors = 0;
       activeEnrollment.readerPreflightDone = true;
       setReaderReadiness(ReaderReadiness::WAITING_FOR_FINGER);
+      logEnrollmentStage("reader initialized; place the finger for the first scan");
       reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
       return;
     }
@@ -864,17 +981,7 @@ void processActiveEnrollment() {
         }
         return;
       }
-      activeEnrollment.scanErrors = 0;
-      setReaderReadiness(ReaderReadiness::FINGER_DETECTED);
-      if (!enrollmentReader->img2tz(static_cast<uint8_t>(1))) {
-        setReaderReadiness(ReaderReadiness::CAPTURE_FAILED);
-        failActiveEnrollment("first_scan_failed", "Unable to process the first fingerprint image");
-        return;
-      }
-      activeEnrollment.stage =
-          enrollment_flow::next(activeEnrollment.stage, enrollment_flow::Event::FirstCaptured);
-      buzzPattern(1);
-      reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
+      completeFirstCapture();
       return;
     }
     case enrollment_flow::Stage::FirstScanCaptured: {
@@ -900,6 +1007,7 @@ void processActiveEnrollment() {
       setReaderReadiness(ReaderReadiness::WAITING_FOR_FINGER);
       activeEnrollment.stage = enrollment_flow::next(
           activeEnrollment.stage, enrollment_flow::Event::FingerRemoved);
+      logEnrollmentStage("finger removed; place the same finger again");
       buzzPattern(1);
       reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), 0);
       return;
@@ -925,7 +1033,7 @@ void processActiveEnrollment() {
         failActiveEnrollment("second_scan_failed", "Unable to process the second fingerprint image");
         return;
       }
-      setReaderReadiness(ReaderReadiness::READY);
+      logEnrollmentStage("second fingerprint captured; matching the two samples");
 
       activeEnrollment.stage =
           enrollment_flow::next(activeEnrollment.stage, enrollment_flow::Event::SecondCaptured);
@@ -939,6 +1047,8 @@ void processActiveEnrollment() {
         failActiveEnrollment("finger_mismatch", "The two scans did not match the same finger");
         return;
       }
+      Serial.print("Enrollment: samples matched with score ");
+      Serial.println(static_cast<unsigned>(score));
       if (!enrollmentReader->regModel()) {
         failActiveEnrollment("template_merge_failed", "Unable to create a fingerprint template");
         return;
@@ -954,11 +1064,15 @@ void processActiveEnrollment() {
         failActiveEnrollment("recovery_state_failed", "Unable to persist enrollment recovery state");
         return;
       }
+      Serial.print("Enrollment: storing template in sensor slot ");
+      Serial.println(static_cast<unsigned>(slot));
       if (!enrollmentReader->storeModel(slot)) {
         failActiveEnrollment("sensor_store_failed", "Unable to store the fingerprint template");
         return;
       }
       activeEnrollment.slotStored = true;
+      Serial.print("Enrollment: template stored in slot ");
+      Serial.println(static_cast<unsigned>(slot));
 
       bool duplicate = false;
       if (!detectDuplicateFinger(slot, duplicate)) {
@@ -978,6 +1092,7 @@ void processActiveEnrollment() {
       }
       activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
       activeEnrollment.lastCompleteAttempt = 0;
+      logEnrollmentStage("confirming registration with the backend");
       attemptEnrollmentCompletion();
       return;
     }
@@ -992,16 +1107,19 @@ void startActiveEnrollment(const EnrollmentSessionInfo& info) {
   activeEnrollment.sessionUid = info.sessionUid;
   activeEnrollment.memberId = info.memberId;
   activeEnrollment.memberName = info.memberName;
-  activeEnrollment.lastScanAt = millis() - READER_POLL_INTERVAL;
+  activeEnrollment.lastScanAt = millis() - ENROLLMENT_PREFLIGHT_INTERVAL;
   activeEnrollment.lastStatusCheck = millis();
   activeEnrollment.stage = enrollment_flow::Stage::WaitingFirstScan;
-  mode = MODE_ENROLLMENT;
+  currentMode = SensorMode::ENROLLMENT;
   setLEDStatus(true, false, false);
+  setReaderReadiness(ReaderReadiness::ENROLLING);
 
-  Serial.print("Enrollment started for ");
+  Serial.println("Sensor ownership: ENROLLMENT (login scanning suspended)");
+  Serial.print("Enrollment: command received for ");
   Serial.print(info.memberName.length() > 0 ? info.memberName : String("member"));
   Serial.print(", session ");
   Serial.println(info.sessionUid);
+  logEnrollmentStage("reader initializing");
 
   if (info.slot >= 1 && info.slot <= 127) {
     bool exists = false;
@@ -1010,7 +1128,7 @@ void startActiveEnrollment(const EnrollmentSessionInfo& info) {
       activeEnrollment.slotStored = true;
       activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
       activeEnrollment.readerPreflightDone = true;
-      setReaderReadiness(ReaderReadiness::READY);
+      logEnrollmentStage("existing template found; confirming registration with the backend");
       savePersistedEnrollment(activeEnrollment.sessionUid, activeEnrollment.slot);
       reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage), activeEnrollment.slot);
       return;
@@ -1105,8 +1223,10 @@ bool reconcilePersistedEnrollment() {
     activeEnrollment.stage = enrollment_flow::Stage::Finalizing;
     activeEnrollment.readerPreflightDone = true;
     activeEnrollment.lastStatusCheck = millis();
-    mode = MODE_ENROLLMENT;
+    currentMode = SensorMode::ENROLLMENT;
     setLEDStatus(true, false, false);
+    setReaderReadiness(ReaderReadiness::ENROLLING);
+    Serial.println("Sensor ownership: ENROLLMENT (login scanning suspended)");
     reportActiveProgress(enrollment_flow::progressStatus(activeEnrollment.stage),
                          activeEnrollment.slot);
     return true;
@@ -1127,7 +1247,7 @@ bool reconcilePersistedEnrollment() {
 }
 
 void processEnrollmentCommand() {
-  if (mode != MODE_IDLE) {
+  if (currentMode != SensorMode::IDLE) {
     return;
   }
   if (enrollmentReader == nullptr) {
@@ -1137,13 +1257,10 @@ void processEnrollmentCommand() {
     }
     return;
   }
-  if (!readerReadinessCanStartEnrollment(readerReadiness)) {
-    return;
-  }
   if (!isWifiConnected() || !isDeviceAuthenticated()) {
     return;
   }
-  if (millis() - lastEnrollmentPoll < ENROLLMENT_POLL_INTERVAL) {
+  if (millis() - lastEnrollmentPoll < enrollmentPollInterval) {
     return;
   }
   if (sensorActivity != SensorActivity::NONE) {
@@ -1163,7 +1280,11 @@ void processEnrollmentCommand() {
   if (!fetchEnrollmentCommand(info, action, httpCode)) {
     return;
   }
+  // Poll quickly only while there is work; back off when the queue is empty.
+  enrollmentPollInterval = action == "none" ? ENROLLMENT_IDLE_POLL_INTERVAL
+                                             : ENROLLMENT_POLL_INTERVAL;
   if (action == "cleanup") {
+    Serial.println("Enrollment: cleanup command received");
     if (info.slot >= 1 && !deleteEnrollmentSlot(static_cast<uint16_t>(info.slot))) {
       return;
     }
@@ -1232,7 +1353,9 @@ void loop() {
   }
 
   if (!isDeviceAuthenticated()) {
-    if (millis() - lastAuthAttempt >= AUTH_RETRY_INTERVAL) {
+    // An active enrollment must not stall for the full idle auth retry window.
+    unsigned long authRetry = activeEnrollment.active ? 5000UL : AUTH_RETRY_INTERVAL;
+    if (millis() - lastAuthAttempt >= authRetry) {
       lastAuthAttempt = millis();
       Serial.println("Attempting backend device authentication...");
       if (authenticateDevice()) {
@@ -1246,20 +1369,29 @@ void loop() {
     return;
   }
 
-  if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL) {
-    lastHeartbeat = millis();
-    handleHeartbeat();
-    refreshEnrollmentsIfDue(false);
-  }
-  reportReaderIfDue(false);
+  if (currentMode == SensorMode::IDLE) {
+    // Claim pending enrollment work first, before any login scan consumes a
+    // finger the operator is presenting for enrollment and before blocking
+    // network calls. processEnrollmentCommand() may take exclusive ownership,
+    // in which case login polling is skipped for this iteration.
+    processEnrollmentCommand();
+    if (currentMode == SensorMode::IDLE) {
+      if (millis() - lastHeartbeat >= HEARTBEAT_INTERVAL) {
+        lastHeartbeat = millis();
+        handleHeartbeat();
+        refreshEnrollmentsIfDue(false);
+      }
+      // Reader status is only reported while idle; enrollment requests
+      // already refresh the device heartbeat, and a blocking report must not
+      // stall the sensor state machine.
+      reportReaderIfDue(false);
 
-  if (mode == MODE_ENROLLMENT) {
-    processActiveEnrollment();
-  } else {
-    pollReaderForLogin();
-    if (mode == MODE_IDLE) {
-      processEnrollmentCommand();
+      // Safe to poll for login; backend authorises every successful match.
+      pollReaderForLogin();
     }
+  } else {
+    // Enrollment, cleanup and sensor-error states own the sensor exclusively.
+    processActiveEnrollment();
   }
 
   delay(5);
