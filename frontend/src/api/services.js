@@ -77,6 +77,7 @@ export const membersManagementApi = {
 
 export const devicesApi = {
   list: (options) => api.get(`${BASE}/devices`, options),
+  rotateKey: (id) => api.post(`${BASE}/devices/${id}/rotate-key`, {}),
 };
 
 export const attendanceTerminalsApi = {

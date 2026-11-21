@@ -55,6 +55,29 @@ function readinessFor(reader, enrollment) {
 }
 
 function DeviceCard({ device, stale }) {
+    const [rotating, setRotating] = useState(false);
+  const [newApiKey, setNewApiKey] = useState("");
+  const [rotateError, setRotateError] = useState("");
+
+  const handleRotateKey = async () => {
+    const confirmed = window.confirm(
+      "Rotate this device API key? The old key will stop working immediately.",
+    );
+    if (!confirmed) return;
+
+    setRotating(true);
+    setRotateError("");
+    setNewApiKey("");
+
+    try {
+      const result = await devicesApi.rotateKey(device.id);
+      setNewApiKey(result.api_key);
+    } catch (err) {
+      setRotateError(err?.message || "Failed to rotate device API key.");
+    } finally {
+      setRotating(false);
+    }
+  };
   const readers = device.readers || [];
   const enrollment = device.enrollment || null;
   const online = Boolean(device.online);
@@ -156,6 +179,34 @@ function DeviceCard({ device, stale }) {
           </div>
         ) : null}
       </div>
+              <div className="lab-device-actions" style={{ marginTop: "1rem" }}>
+          <AppButton
+            variant="outline"
+            size="sm"
+            onClick={handleRotateKey}
+            loading={rotating}
+            disabled={rotating}
+          >
+            Rotate API Key
+          </AppButton>
+
+          {rotateError && <Alert tone="danger">{rotateError}</Alert>}
+
+          {newApiKey && (
+            <Alert tone="warning" title="New API key — copy and store it now">
+              <div style={{ wordBreak: "break-all", marginBottom: "0.75rem" }}>
+                {newApiKey}
+              </div>
+              <AppButton
+                variant="outline"
+                size="sm"
+                onClick={() => navigator.clipboard.writeText(newApiKey)}
+              >
+                Copy API Key
+              </AppButton>
+            </Alert>
+          )}
+        </div>
     </Panel>
   );
 }
