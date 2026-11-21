@@ -70,6 +70,7 @@ func (s *Server) Router() *gin.Engine {
 	s.registerAdminRoutes(api)
 	s.registerMemberManagementRoutes(api)
 	s.registerAttendanceRoutes(api)
+	s.registerAttendanceTerminalRoutes(api)
 	s.registerBiometricRoutes(api)
 	s.registerDoorAccessRoutes(api)
 	s.registerMessageRoutes(api)

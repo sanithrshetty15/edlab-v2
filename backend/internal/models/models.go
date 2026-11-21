@@ -179,6 +179,58 @@ type MemberEnrollmentSession struct {
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
+// AttendanceEnrollmentSession tracks an enrollment or removal command for an
+// attendance terminal. Fingerprint templates stay on the terminal; only the
+// device/slot mapping is persisted in biometric_enrollments.
+type AttendanceEnrollmentSession struct {
+	ID                   int64      `gorm:"primaryKey" json:"id"`
+	SessionUID           string     `gorm:"not null;uniqueIndex" json:"session_uid"`
+	MemberID             int64      `gorm:"not null;index" json:"member_id"`
+	DeviceRegistrationID int64      `gorm:"not null;index" json:"device_registration_id"`
+	RequestedByID        int64      `gorm:"not null;default:0" json:"requested_by_id"`
+	Operation            string     `gorm:"not null;default:'enroll';size:24" json:"operation"`
+	Status               string     `gorm:"not null;default:'pending';index" json:"status"`
+	ReaderKey            *string    `gorm:"size:32" json:"reader_key,omitempty"`
+	FingerprintSlot      *int       `json:"fingerprint_slot,omitempty"`
+	DeviceUserID         *string    `json:"device_user_id,omitempty"`
+	Attempts             int        `gorm:"not null;default:0" json:"attempts"`
+	ErrorCode            *string    `json:"error_code,omitempty"`
+	ErrorMessage         *string    `json:"error_message,omitempty"`
+	CleanupRequired      bool       `gorm:"not null;default:false" json:"cleanup_required"`
+	CleanupCompletedAt   *time.Time `json:"cleanup_completed_at,omitempty"`
+	IsActive             bool       `gorm:"not null;default:true;index" json:"is_active"`
+	ClaimedAt            *time.Time `json:"claimed_at,omitempty"`
+	ClaimedByDeviceID    *int64     `json:"claimed_by_device_id,omitempty"`
+	ExpiresAt            *time.Time `json:"expires_at,omitempty"`
+	StartedAt            *time.Time `json:"started_at,omitempty"`
+	CompletedAt          *time.Time `json:"completed_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+// AttendanceTerminalStatus is the latest health report from an attendance
+// terminal. It intentionally stores no biometric or member data.
+type AttendanceTerminalStatus struct {
+	ID                   int64      `gorm:"primaryKey" json:"id"`
+	DeviceRegistrationID int64      `gorm:"not null;uniqueIndex" json:"device_registration_id"`
+	FirmwareVersion      string     `gorm:"size:64" json:"firmware_version"`
+	ReaderModel          string     `gorm:"size:64" json:"reader_model"`
+	ReaderFirmware       string     `gorm:"size:64" json:"reader_firmware"`
+	ReaderConnected      bool       `gorm:"not null;default:false" json:"reader_connected"`
+	ReaderReadiness      string     `gorm:"not null;default:'not_ready';size:32" json:"reader_readiness"`
+	QueueDepth           int        `gorm:"not null;default:0" json:"queue_depth"`
+	NetworkStatus        string     `gorm:"size:32" json:"network_status"`
+	LastSyncAt           *time.Time `json:"last_sync_at,omitempty"`
+	LastCaptureAt        *time.Time `json:"last_capture_at,omitempty"`
+	ReportedAt           *time.Time `json:"reported_at,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
+}
+
+func (AttendanceTerminalStatus) TableName() string {
+	return "attendance_terminal_status"
+}
+
 type MemberRegistrationEmail struct {
 	ID        int64      `gorm:"primaryKey" json:"id"`
 	MemberID  int64      `gorm:"not null;uniqueIndex:index_member_registration_emails_on_member_id" json:"member_id"`

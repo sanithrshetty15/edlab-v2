@@ -20,6 +20,7 @@ import MemberResourcesPage from "../pages/app/MemberResourcesPage";
 import SettingsPage from "../pages/app/SettingsPage";
 import MembersPage from "../pages/app/admin/MembersPage";
 import AttendancePage from "../pages/app/admin/AttendancePage";
+import LiveAttendancePage from "../pages/app/admin/LiveAttendancePage";
 import TasksPage from "../pages/app/admin/TasksPage";
 import InventoryPage from "../pages/app/admin/InventoryPage";
 import BorrowingPage from "../pages/app/admin/BorrowingPage";
@@ -31,6 +32,7 @@ import { navigate, usePathname } from "../utils/router";
 const ADMIN_ROUTES = new Set([
   "/app/members",
   "/app/attendance",
+  "/app/live-attendance",
   "/app/tasks",
   "/app/inventory",
   "/app/borrowing",
@@ -81,6 +83,8 @@ function routeContent(pathname, isAdmin) {
       return isAdmin ? <MembersPage /> : <AccessDenied />;
     case "/app/attendance":
       return isAdmin ? <AttendancePage /> : <AccessDenied />;
+    case "/app/live-attendance":
+      return isAdmin ? <LiveAttendancePage /> : <AccessDenied />;
     case "/app/tasks":
       return isAdmin ? <TasksPage /> : <AccessDenied />;
     case "/app/inventory":

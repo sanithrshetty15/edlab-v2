@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	enrollmentReaderLogin     = "login"
-	enrollmentReaderLogout    = "logout"
-	enrollmentReaderDedicated = "dedicated"
+	enrollmentReaderLogin      = "login"
+	enrollmentReaderLogout     = "logout"
+	enrollmentReaderDedicated  = "dedicated"
+	enrollmentReaderAttendance = "attendance"
 
 	enrollmentReaderFreshness = 90 * time.Second
 )
@@ -31,6 +32,8 @@ func enrollmentReaderDefaults(key string) (label string, uart int) {
 		return "Logout reader", 1
 	case enrollmentReaderDedicated:
 		return "Dedicated enrollment reader", 0
+	case enrollmentReaderAttendance:
+		return "Attendance reader", 0
 	default:
 		return "", 0
 	}
@@ -38,7 +41,7 @@ func enrollmentReaderDefaults(key string) (label string, uart int) {
 
 func isValidEnrollmentReaderKey(key string) bool {
 	switch key {
-	case enrollmentReaderLogin, enrollmentReaderLogout, enrollmentReaderDedicated:
+	case enrollmentReaderLogin, enrollmentReaderLogout, enrollmentReaderDedicated, enrollmentReaderAttendance:
 		return true
 	default:
 		return false

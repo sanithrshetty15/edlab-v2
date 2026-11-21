@@ -632,33 +632,85 @@ func (s *Server) processFingerprintScan(ctx context.Context, event *models.Devic
 	}
 
 	now := time.Now()
-	today := startOfDay(now)
+	result, err := s.applyAttendanceRecord(
+		s.DB.WithContext(ctx),
+		&member,
+		now,
+		now.UTC(),
+		nullableString(fmt.Sprintf("%d", event.ID)),
+		0,
+	)
+	if err != nil {
+		return err
+	}
+	switch result.Outcome {
+	case attendanceOutcomeEntry:
+		s.writeSystemAudit(ctx, "attendance_login_biometric", "AttendanceLog", &result.Log.ID, member, event)
+	case attendanceOutcomeExit:
+		s.writeSystemAudit(ctx, "attendance_logout_biometric", "AttendanceLog", &result.Log.ID, member, event)
+	}
+	return nil
+}
+
+type attendanceApplicationResult struct {
+	Outcome string
+	Log     *models.AttendanceLog
+}
+
+// applyAttendanceRecord is the single source of truth for the Entry/Exit
+// toggle. The existing door path passes a zero dedupe window and its historical
+// event-id device reference. Attendance terminals pass their own reference and
+// a duplicate window so retries and double scans do not close a fresh entry.
+func (s *Server) applyAttendanceRecord(
+	db *gorm.DB,
+	member *models.Member,
+	entryAt time.Time,
+	exitAt time.Time,
+	deviceReference *string,
+	dedupeWindow time.Duration,
+) (*attendanceApplicationResult, error) {
+	today := startOfDay(entryAt)
 	var last models.AttendanceLog
-	err = s.DB.WithContext(ctx).
+	err := db.
 		Where("member_id = ? AND entry_date = ?", member.ID, today).
 		Order("entry_time DESC").First(&last).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	if dedupeWindow > 0 && err == nil {
+		duplicate := false
+		if last.ExitTime == nil {
+			duplicate = !entryAt.After(last.EntryTime) || entryAt.Sub(last.EntryTime) < dedupeWindow
+		} else {
+			duplicate = !entryAt.After(*last.ExitTime) || entryAt.Sub(*last.ExitTime) < dedupeWindow
+		}
+		if duplicate {
+			return &attendanceApplicationResult{Outcome: attendanceOutcomeDuplicate, Log: &last}, nil
+		}
+	}
+
 	if errors.Is(err, gorm.ErrRecordNotFound) || (err == nil && last.ExitTime != nil) {
 		record := models.AttendanceLog{
 			MemberID:        member.ID,
 			EntryDate:       today,
-			EntryTime:       now,
+			EntryTime:       entryAt,
 			Source:          "biometric",
-			DeviceReference: nullableString(fmt.Sprintf("%d", event.ID)),
+			DeviceReference: deviceReference,
 		}
-		if err := s.DB.WithContext(ctx).Create(&record).Error; err != nil {
-			return err
+		if err := db.Create(&record).Error; err != nil {
+			return nil, err
 		}
-		s.writeSystemAudit(ctx, "attendance_login_biometric", "AttendanceLog", &record.ID, member, event)
-		return nil
+		return &attendanceApplicationResult{Outcome: attendanceOutcomeEntry, Log: &record}, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
-	if err := s.DB.WithContext(ctx).Model(&models.AttendanceLog{}).Where("id = ?", last.ID).Update("exit_time", now.UTC()).Error; err != nil {
-		return err
+	if err := db.Model(&models.AttendanceLog{}).Where("id = ?", last.ID).Update("exit_time", exitAt).Error; err != nil {
+		return nil, err
 	}
-	s.writeSystemAudit(ctx, "attendance_logout_biometric", "AttendanceLog", &last.ID, member, event)
-	return nil
+	last.ExitTime = &exitAt
+	return &attendanceApplicationResult{Outcome: attendanceOutcomeExit, Log: &last}, nil
 }
 
 func (s *Server) writeSystemAudit(ctx context.Context, action, resourceType string, resourceID *int64, member models.Member, event *models.DeviceEvent) {

@@ -79,6 +79,20 @@ export const devicesApi = {
   list: (options) => api.get(`${BASE}/devices`, options),
 };
 
+export const attendanceTerminalsApi = {
+  list: (options) => api.get(`${BASE}/attendance-terminals`, options),
+  live: (params, options) =>
+    api.get(`${BASE}/attendance-terminals/live`, { query: params, ...options }),
+  mappings: (id, options) =>
+    api.get(`${BASE}/attendance-terminals/${id}/mappings`, options),
+  startEnrollment: (id, payload) =>
+    api.post(`${BASE}/attendance-terminals/${id}/enrollment-sessions`, payload),
+  getEnrollment: (id, sessionUid, options) =>
+    api.get(`${BASE}/attendance-terminals/${id}/enrollment-sessions/${sessionUid}`, options),
+  cancelEnrollment: (id, sessionUid, options) =>
+    api.delete(`${BASE}/attendance-terminals/${id}/enrollment-sessions/${sessionUid}`, options),
+};
+
 export const attendanceApi = {
   list: (params) => api.get(`${BASE}/attendance`, { query: params }),
   get: (id) => api.get(`${BASE}/attendance/${id}`),

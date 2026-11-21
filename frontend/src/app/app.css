@@ -5717,3 +5717,94 @@ a.lab-activity__title:hover {
     justify-content: flex-start;
   }
 }
+
+/* Attendance terminal live monitor */
+.lab-live-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lab-live-toolbar .lab-select-wrap {
+  min-width: 9rem;
+}
+
+.lab-live-feed .lab-feed__copy p {
+  white-space: normal;
+}
+
+.lab-live-event__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.lab-live-event__title strong {
+  color: var(--lab-text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.lab-live-event__time {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+  margin-left: auto;
+  color: var(--lab-faint);
+  font-size: 0.6rem;
+  white-space: nowrap;
+}
+
+.lab-live-event__time time {
+  color: var(--lab-muted);
+  font-weight: 600;
+}
+
+.lab-terminal-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  border: 1px solid var(--lab-line);
+  border-radius: var(--lab-radius);
+  background: rgba(255, 255, 255, 0.018);
+  padding: 0.9rem;
+}
+
+.lab-terminal-card__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.lab-terminal-card__head strong {
+  display: block;
+  color: var(--lab-text);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.lab-terminal-card__head span {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--lab-muted);
+  font-size: 0.64rem;
+}
+
+.lab-terminal-card__status,
+.lab-terminal-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+@media (max-width: 640px) {
+  .lab-live-event__time {
+    align-items: flex-start;
+    margin-left: 0;
+  }
+}
