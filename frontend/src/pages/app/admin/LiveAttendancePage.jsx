@@ -12,6 +12,7 @@ import {
   LoadingState,
   PageHeader,
   Panel,
+  SegmentedControl,
   Select,
   StatCard,
   TextInput,
@@ -29,6 +30,47 @@ import { formatDateTime, formatRelative, formatTime, titleCase } from "../../../
 
 const FEED_POLL_MS = 3000;
 const TERMINAL_POLL_MS = 5000;
+const DEFAULT_SLOT_CAPACITY = 1000;
+
+const ENROLLMENT_MODES = [
+  { value: "existing", label: "Existing member" },
+  { value: "new", label: "New member" },
+];
+
+const EMPTY_NEW_MEMBER = {
+  name: "",
+  usn: "",
+  academic_year: "1",
+  branch: "",
+  section: "",
+  email: "",
+  phone: "",
+};
+
+const NEW_MEMBER_REQUIRED_FIELDS = ["name", "usn", "branch", "section", "academic_year"];
+const NEW_MEMBER_OPTIONAL_FIELDS = ["email", "phone"];
+
+function validateNewMember(values) {
+  const errors = {};
+  if (!values.name.trim()) errors.name = "Full name is required.";
+  if (!values.usn.trim()) {
+    errors.usn = "USN is required.";
+  } else if (!/^[A-Z0-9]{6,15}$/i.test(values.usn.trim())) {
+    errors.usn = "USN must be 6-15 letters and digits.";
+  }
+  if (!values.branch.trim()) errors.branch = "Branch is required.";
+  if (!values.section.trim()) errors.section = "Section is required.";
+  if (!values.academic_year || Number(values.academic_year) < 1 || Number(values.academic_year) > 4) {
+    errors.academic_year = "Select an academic year between 1 and 4.";
+  }
+  if (values.email.trim() && !/^[^\s@]+@gmail\.com$/i.test(values.email.trim())) {
+    errors.email = "Enter a valid Gmail address ending in @gmail.com.";
+  }
+  if (values.phone.trim() && !/^\+?[1-9]\d{7,14}$/.test(values.phone.trim())) {
+    errors.phone = "Use an international format such as +919876543210.";
+  }
+  return errors;
+}
 
 const OUTCOME_META = {
   entry: { label: "Entry", tone: "success", icon: CheckCircleIcon, iconTone: "accent" },
@@ -148,8 +190,14 @@ function TerminalCard({ terminal, onEnroll, onMappings }) {
           <strong>{terminal.last_seen_at ? formatRelative(terminal.last_seen_at) : "Never"}</strong>
         </div>
         <div>
-          <span className="lab-device-meta__label">Mappings</span>
-          <strong>{terminal.mapping_count ?? 0} fingerprints</strong>
+          <span className="lab-device-meta__label">Fingerprint slots</span>
+          <strong>
+            {terminal.slots_used ?? terminal.mapping_count ?? 0} used ·{" "}
+            {terminal.slots_available ?? Math.max(0, (terminal.slot_capacity ?? DEFAULT_SLOT_CAPACITY) - (terminal.mapping_count ?? 0))} free
+          </strong>
+          <span className="lab-muted lab-small">
+            of {terminal.slot_capacity ?? DEFAULT_SLOT_CAPACITY} total
+          </span>
         </div>
         <div>
           <span className="lab-device-meta__label">Pending queue</span>
@@ -201,7 +249,11 @@ function TerminalCard({ terminal, onEnroll, onMappings }) {
 }
 
 function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
+  const [mode, setMode] = useState("existing");
   const [memberId, setMemberId] = useState("");
+  const [newMember, setNewMember] = useState(EMPTY_NEW_MEMBER);
+  const [newMemberErrors, setNewMemberErrors] = useState({});
+  const [createdMember, setCreatedMember] = useState(null);
   const [slot, setSlot] = useState("");
   const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
@@ -210,6 +262,15 @@ function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
   const [cancelling, setCancelling] = useState(false);
 
   const active = Boolean(session?.is_active);
+  const slotCapacity = terminal.slot_capacity ?? DEFAULT_SLOT_CAPACITY;
+  const selectedMember =
+    createdMember || members.find((member) => String(member.id) === String(memberId));
+  const submitLabel =
+    mode === "new"
+      ? createdMember
+        ? "Retry enrollment"
+        : "Create & start"
+      : "Start enrollment";
 
   useEffect(() => {
     if (!session?.session_uid || !session.is_active) return undefined;
@@ -223,7 +284,7 @@ function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
         setSession(result.enrollment);
         setError(null);
         if (result.enrollment?.status === "completed") {
-          setNotice("Fingerprint enrolled. The device-specific mapping is saved.");
+          setNotice("Fingerprint enrolled. The member is active and the device mapping is saved.");
           onChanged?.();
         } else if (result.enrollment?.is_active) {
           timer = window.setTimeout(poll, 2000);
@@ -242,17 +303,63 @@ function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
     };
   }, [session?.session_uid, session?.is_active, terminal.id, onChanged]);
 
+  const updateNewMember = (key) => (event) => {
+    setNewMember((current) => ({ ...current, [key]: event.target.value }));
+  };
+
+  const reset = () => {
+    setSession(null);
+    setCreatedMember(null);
+    setNewMember(EMPTY_NEW_MEMBER);
+    setNewMemberErrors({});
+    setNotice(null);
+    setError(null);
+  };
+
   const start = async (event) => {
     event.preventDefault();
-    if (!memberId) {
-      setError(new Error("Choose the member who will use this fingerprint."));
-      return;
-    }
-    setStarting(true);
+    if (starting) return;
     setError(null);
     setNotice(null);
+
+    let target;
+    if (mode === "existing") {
+      if (!memberId) {
+        setError(new Error("Choose the member who will use this fingerprint."));
+        return;
+      }
+      target = { id: Number(memberId) };
+    } else if (createdMember) {
+      target = createdMember;
+    } else {
+      const nextErrors = validateNewMember(newMember);
+      setNewMemberErrors(nextErrors);
+      if (Object.keys(nextErrors).length) return;
+      setStarting(true);
+      try {
+        const result = await membersManagementApi.create({
+          name: newMember.name.trim(),
+          identifier_type: "usn",
+          usn: newMember.usn.trim().toUpperCase(),
+          roll_number: "",
+          academic_year: Number(newMember.academic_year),
+          branch: newMember.branch.trim(),
+          section: newMember.section.trim(),
+          email: newMember.email.trim(),
+          phone: newMember.phone.trim(),
+        });
+        setCreatedMember(result.member);
+        target = result.member;
+      } catch (createError) {
+        setError(createError);
+        setStarting(false);
+        return;
+      }
+    }
+
+    setStarting(true);
     try {
-      const payload = { member_id: Number(memberId) };
+      const payload = { member_id: Number(target.id) };
       if (slot.trim()) payload.fingerprint_slot = Number(slot);
       const result = await attendanceTerminalsApi.startEnrollment(terminal.id, payload);
       setSession(result.enrollment);
@@ -280,8 +387,6 @@ function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
     }
   };
 
-  const selectedMember = members.find((member) => String(member.id) === String(memberId));
-
   return (
     <Modal
       open
@@ -291,14 +396,7 @@ function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
       footer={
         <>
           {session && !active && (
-            <AppButton
-              variant="outline"
-              onClick={() => {
-                setSession(null);
-                setNotice(null);
-                setError(null);
-              }}
-            >
+            <AppButton variant="outline" onClick={reset}>
               Enroll another
             </AppButton>
           )}
@@ -313,7 +411,7 @@ function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
           )}
           {!session && (
             <AppButton form="attendance-enroll-form" type="submit" variant="primary" loading={starting}>
-              Start enrollment
+              {submitLabel}
             </AppButton>
           )}
         </>
@@ -354,31 +452,148 @@ function EnrollmentDialog({ terminal, members, onClose, onChanged }) {
           </div>
         ) : (
           <form id="attendance-enroll-form" className="lab-form-stack" onSubmit={start} noValidate>
-            <Field label="Member" htmlFor="attendance-enroll-member" required hint="Only active members can be enrolled.">
-              <Select
-                id="attendance-enroll-member"
-                value={memberId}
-                onChange={(event) => setMemberId(event.target.value)}
-                disabled={starting}
-              >
-                <option value="">Select an active member</option>
-                {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.name} · {member.login_id}
-                  </option>
-                ))}
-              </Select>
+            <Field label="Enrollment type" className="lab-span-2">
+              <SegmentedControl
+                options={ENROLLMENT_MODES}
+                value={mode}
+                onChange={setMode}
+                label="Member registration mode"
+                disabled={starting || Boolean(createdMember)}
+              />
             </Field>
+
+            {mode === "existing" ? (
+              <Field
+                label="Member"
+                htmlFor="attendance-enroll-member"
+                required
+                hint="Active members can be enrolled again on a new terminal."
+              >
+                <Select
+                  id="attendance-enroll-member"
+                  value={memberId}
+                  onChange={(event) => setMemberId(event.target.value)}
+                  disabled={starting}
+                >
+                  <option value="">Select an active member</option>
+                  {members.map((member) => (
+                    <option key={member.id} value={member.id}>
+                      {member.name} · {member.login_id}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+            ) : (
+              <>
+                {createdMember && (
+                  <Alert tone="warning" title="Member created">
+                    {createdMember.name} was saved as awaiting fingerprint enrollment. Retry the
+                    terminal enrollment instead of creating another record.
+                  </Alert>
+                )}
+                <div className="lab-form-grid">
+                  <Field label="Full name" htmlFor="attendance-new-name" error={newMemberErrors.name} required>
+                    <TextInput
+                      id="attendance-new-name"
+                      value={newMember.name}
+                      onChange={updateNewMember("name")}
+                      autoComplete="name"
+                      disabled={starting || Boolean(createdMember)}
+                    />
+                  </Field>
+                  <Field label="Academic year" htmlFor="attendance-new-year" error={newMemberErrors.academic_year} required>
+                    <Select
+                      id="attendance-new-year"
+                      value={newMember.academic_year}
+                      onChange={updateNewMember("academic_year")}
+                      disabled={starting || Boolean(createdMember)}
+                    >
+                      {[1, 2, 3, 4].map((year) => (
+                        <option key={year} value={year}>Year {year}</option>
+                      ))}
+                    </Select>
+                  </Field>
+                  <Field
+                    label="USN"
+                    htmlFor="attendance-new-usn"
+                    error={newMemberErrors.usn}
+                    hint="The login ID is created from this USN."
+                    required
+                  >
+                    <TextInput
+                      id="attendance-new-usn"
+                      value={newMember.usn}
+                      onChange={updateNewMember("usn")}
+                      autoCapitalize="characters"
+                      spellCheck="false"
+                      placeholder="4AL25CS000"
+                      disabled={starting || Boolean(createdMember)}
+                    />
+                  </Field>
+                  <Field label="Branch" htmlFor="attendance-new-branch" error={newMemberErrors.branch} required>
+                    <TextInput
+                      id="attendance-new-branch"
+                      value={newMember.branch}
+                      onChange={updateNewMember("branch")}
+                      placeholder="CSE"
+                      disabled={starting || Boolean(createdMember)}
+                    />
+                  </Field>
+                  <Field label="Section" htmlFor="attendance-new-section" error={newMemberErrors.section} required>
+                    <TextInput
+                      id="attendance-new-section"
+                      value={newMember.section}
+                      onChange={updateNewMember("section")}
+                      placeholder="A"
+                      disabled={starting || Boolean(createdMember)}
+                    />
+                  </Field>
+                  <Field
+                    label="Gmail address"
+                    htmlFor="attendance-new-email"
+                    error={newMemberErrors.email}
+                    hint="Optional. Confirmation and recovery emails are sent here."
+                  >
+                    <TextInput
+                      id="attendance-new-email"
+                      type="email"
+                      value={newMember.email}
+                      onChange={updateNewMember("email")}
+                      autoComplete="email"
+                      placeholder="member@gmail.com"
+                      disabled={starting || Boolean(createdMember)}
+                    />
+                  </Field>
+                  <Field
+                    label="Phone"
+                    htmlFor="attendance-new-phone"
+                    error={newMemberErrors.phone}
+                    hint="Optional. Use an international format."
+                  >
+                    <TextInput
+                      id="attendance-new-phone"
+                      type="tel"
+                      value={newMember.phone}
+                      onChange={updateNewMember("phone")}
+                      autoComplete="tel"
+                      placeholder="+919876543210"
+                      disabled={starting || Boolean(createdMember)}
+                    />
+                  </Field>
+                </div>
+              </>
+            )}
+
             <Field
               label="Fingerprint slot"
               htmlFor="attendance-enroll-slot"
-              hint="Optional. Leave blank to allocate the next free slot on this terminal (1–127)."
+              hint={`Optional. Leave blank to allocate the next free slot on this terminal (1–${slotCapacity}).`}
             >
               <TextInput
                 id="attendance-enroll-slot"
                 type="number"
                 min="1"
-                max="127"
+                max={slotCapacity}
                 value={slot}
                 onChange={(event) => setSlot(event.target.value)}
                 disabled={starting}
@@ -557,6 +772,7 @@ export default function LiveAttendancePage() {
     "live-attendance-members",
   );
   const members = membersResource.data?.members ?? [];
+  const reloadMembers = membersResource.reload;
 
   useEffect(() => {
     if (typeof document === "undefined") return undefined;
@@ -649,6 +865,11 @@ export default function LiveAttendancePage() {
   const reloadTerminals = useCallback(() => {
     setTerminalNonce((current) => current + 1);
   }, []);
+
+  const reloadEnrollmentState = useCallback(() => {
+    reloadTerminals();
+    reloadMembers();
+  }, [reloadTerminals, reloadMembers]);
 
   const terminals = terminalsData?.terminals ?? [];
   const onlineCount = terminals.filter((terminal) => terminal.online).length;
@@ -814,7 +1035,7 @@ export default function LiveAttendancePage() {
           terminal={enrollTerminal}
           members={members}
           onClose={() => setEnrollTerminal(null)}
-          onChanged={reloadTerminals}
+          onChanged={reloadEnrollmentState}
         />
       )}
       {mappingsTerminal && (

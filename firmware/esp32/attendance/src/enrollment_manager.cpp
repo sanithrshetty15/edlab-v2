@@ -94,11 +94,11 @@ bool EnrollmentManager::startFromCommand(const EnrollmentInfo& command) {
     return false;
   }
   if ((command.action == "enroll" || command.action == "delete") &&
-      (command.slot < 1 || command.slot > 127)) {
+      !isValidSlot(command.slot)) {
     ATT_LOG_E("enroll", "command has invalid slot %d", command.slot);
     return false;
   }
-  if (command.action == "cleanup" && (command.slot < 1 || command.slot > 127)) {
+  if (command.action == "cleanup" && !isValidSlot(command.slot)) {
     ATT_LOG_E("enroll", "cleanup command has no slot");
     return false;
   }
@@ -534,7 +534,8 @@ void EnrollmentManager::updateDuplicateCheck() {
   // the stored library is the same proven sequence used by the door-lock
   // firmware and detects an existing enrollment before anything is stored.
   uint16_t existingSlot = 0;
-  if (reader_->searchRange(1, 127, existingSlot)) {
+  if (reader_->searchRange(static_cast<uint16_t>(kFingerprintSlotMin),
+                           static_cast<uint16_t>(kFingerprintCapacity), existingSlot)) {
     failSlot_ = command_.slot;
     abortWithFailure("duplicate_fingerprint",
                      "This finger is already enrolled in another slot on this terminal");
@@ -712,7 +713,7 @@ void EnrollmentManager::updateCleanupAck() {
 }
 
 bool EnrollmentManager::deleteLocalSlot() {
-  if (command_.slot < 1 || command_.slot > 127) {
+  if (!isValidSlot(command_.slot)) {
     return false;
   }
   return reader_->deleteModel(static_cast<uint16_t>(command_.slot));

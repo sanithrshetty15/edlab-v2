@@ -209,6 +209,7 @@ func (e *enrollmentTestEnv) createPendingMember(prefix string) (int64, string, s
 		"identifier_type":       "usn",
 		"usn":                   fmt.Sprintf("TST%d", value),
 		"branch":                "Computer Science",
+		"section":               "A",
 	}
 	recorder := e.request(http.MethodPost, "/api/v1/members-management", e.adminToken, "", body)
 	e.expect(recorder, http.StatusCreated)
@@ -588,16 +589,16 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("simplified registration accepts the four required fields", func(t *testing.T) {
+	t.Run("registration accepts required fields with optional email and phone", func(t *testing.T) {
 		value := time.Now().UnixNano() % 1000000000
 		suffix := env.nextSuffix()
 		roll := fmt.Sprintf("R%d", value)
-		firstYearEmail := fmt.Sprintf("first-year-%s@gmail.com", suffix)
 		body := map[string]any{
 			"name":          "First Year Member",
 			"academic_year": 1,
 			"roll_number":   roll,
-			"email":         firstYearEmail,
+			"branch":        "Computer Science",
+			"section":       "A",
 		}
 		recorder := env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", body)
 		env.expect(recorder, http.StatusCreated)
@@ -612,6 +613,9 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 		if response.Member.Status != memberStatusPendingEnrollment || response.Enrollment == nil {
 			t.Fatalf("first-year member must await enrollment: %s", recorder.Body.String())
 		}
+		if response.Member.Email != "" {
+			t.Fatalf("member email = %q, want empty", response.Member.Email)
+		}
 
 		recorder = env.request(http.MethodPost, "/api/v1/members-management", env.adminToken, "", body)
 		env.expect(recorder, http.StatusUnprocessableEntity)
@@ -622,6 +626,8 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 			"name":          "Second Year Member",
 			"academic_year": 3,
 			"usn":           usn,
+			"branch":        "Computer Science",
+			"section":       "B",
 			"email":         secondYearEmail,
 		})
 		env.expect(recorder, http.StatusCreated)
@@ -638,6 +644,8 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 			"name":          "Invalid Email Member",
 			"academic_year": 2,
 			"usn":           fmt.Sprintf("TST%d", value+2),
+			"branch":        "Computer Science",
+			"section":       "A",
 			"email":         "not-an-email",
 		})
 		env.expect(recorder, http.StatusUnprocessableEntity)
@@ -674,6 +682,8 @@ func TestMemberFingerprintEnrollmentIntegration(t *testing.T) {
 			"academic_year":   3,
 			"identifier_type": "roll_number",
 			"roll_number":     roll,
+			"branch":          "Computer Science",
+			"section":         "B",
 			"email":           fmt.Sprintf("roll-third-year-%s@gmail.com", suffix),
 		})
 		env.expect(recorder, http.StatusCreated)

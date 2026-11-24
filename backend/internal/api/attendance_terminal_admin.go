@@ -47,7 +47,7 @@ func nextAttendanceSlot(tx *gorm.DB, deviceID int64) (int, error) {
 	for _, slot := range slots {
 		used[slot] = true
 	}
-	for slot := enrollmentSlotMin; slot <= enrollmentSlotMax; slot++ {
+	for slot := attendanceSlotMin; slot <= attendanceSlotMax; slot++ {
 		if !used[slot] {
 			return slot, nil
 		}
@@ -391,7 +391,11 @@ func (s *Server) listAttendanceTerminals(c *gin.Context) {
 
 	for i := range devices {
 		item := serializeDevice(&devices[i])
-		item["mapping_count"] = countByDevice[devices[i].ID]
+		used := countByDevice[devices[i].ID]
+		item["mapping_count"] = used
+		item["slot_capacity"] = attendanceSlotCapacity
+		item["slots_used"] = used
+		item["slots_available"] = attendanceSlotCapacity - used
 		if status, ok := statusByDevice[devices[i].ID]; ok {
 			item["terminal_status"] = serializeAttendanceTerminalStatus(status, &devices[i], now)
 		} else {
@@ -496,8 +500,8 @@ func (s *Server) createAttendanceEnrollmentSession(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "operation must be enroll or delete")
 		return
 	}
-	if request.FingerprintSlot != nil && !validateEnrollmentSlot(*request.FingerprintSlot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+	if request.FingerprintSlot != nil && !validateAttendanceSlot(*request.FingerprintSlot) {
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 	ctx := c.Request.Context()
@@ -507,13 +511,16 @@ func (s *Server) createAttendanceEnrollmentSession(c *gin.Context) {
 		return
 	}
 	if operation == attendanceSessionOperationEnroll {
-		if member.Status != "active" {
-			fail(c, http.StatusUnprocessableEntity, "Member must be active before enrolling an attendance fingerprint")
-			return
-		}
-		var user models.User
-		if err := s.DB.WithContext(ctx).First(&user, member.UserID).Error; err != nil || !user.Active {
-			fail(c, http.StatusUnprocessableEntity, "Member account is disabled")
+		switch member.Status {
+		case "active":
+			var user models.User
+			if err := s.DB.WithContext(ctx).First(&user, member.UserID).Error; err != nil || !user.Active {
+				fail(c, http.StatusUnprocessableEntity, "Member account is disabled")
+				return
+			}
+		case memberStatusPendingEnrollment:
+		default:
+			fail(c, http.StatusUnprocessableEntity, "Member must be active or awaiting fingerprint enrollment")
 			return
 		}
 	}

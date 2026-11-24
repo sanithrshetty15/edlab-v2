@@ -146,7 +146,9 @@ bool timeReached(uint32_t nowMs, uint32_t targetMs) {
   return static_cast<int32_t>(nowMs - targetMs) >= 0;
 }
 
-bool isValidSlot(int slot) { return slot >= 1 && slot <= 127; }
+bool isValidSlot(int slot) {
+  return slot >= kFingerprintSlotMin && slot <= kFingerprintSlotMax;
+}
 
 bool isValidIdempotencyKey(const char* value) {
   if (value == nullptr) {

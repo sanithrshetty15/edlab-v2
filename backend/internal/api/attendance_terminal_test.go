@@ -74,7 +74,7 @@ func TestNormalizeAttendanceScanRequest(t *testing.T) {
 		},
 		{
 			name:    "slot out of range",
-			request: attendanceScanRequest{IdempotencyKey: "scan-key-0003", FingerprintSlot: intPointerForTest(128)},
+			request: attendanceScanRequest{IdempotencyKey: "scan-key-0003", FingerprintSlot: intPointerForTest(1001)},
 			wantErr: true,
 		},
 		{
@@ -105,6 +105,22 @@ func TestNormalizeAttendanceScanRequest(t *testing.T) {
 				t.Fatalf("result = %q, want %q", request.Result, test.result)
 			}
 		})
+	}
+}
+
+func TestAttendanceSlotCapacity(t *testing.T) {
+	if attendanceSlotCapacity != 1000 {
+		t.Fatalf("attendance slot capacity = %d, want 1000", attendanceSlotCapacity)
+	}
+	for _, slot := range []int{1, 127, 128, 1000} {
+		if !validateAttendanceSlot(slot) {
+			t.Fatalf("slot %d should be valid for attendance", slot)
+		}
+	}
+	for _, slot := range []int{0, -1, 1001} {
+		if validateAttendanceSlot(slot) {
+			t.Fatalf("slot %d should be invalid for attendance", slot)
+		}
 	}
 }
 
@@ -490,5 +506,100 @@ func TestAttendanceTerminalScanLifecycleIntegration(t *testing.T) {
 	})
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("anonymous scan status = %d, want 401", unauthorized.Code)
+	}
+}
+
+func TestAttendanceEnrollmentActivatesPendingMemberIntegration(t *testing.T) {
+	env := newAttendanceTestEnv(t)
+	suffix := time.Now().UnixNano()
+	terminalKey := fmt.Sprintf("attendance-pending-key-%d", suffix)
+	terminal := env.createDevice(t, terminalKey, fmt.Sprintf("attendance-pending-%d", suffix), attendanceDeviceType)
+	adminToken := env.createAdminSession(t)
+
+	loginID := fmt.Sprintf("pending-%d", suffix)
+	usn := fmt.Sprintf("PEND%d", suffix%10000000)
+	user := models.User{Email: "", Role: "member", Active: false}
+	if err := env.db.Create(&user).Error; err != nil {
+		t.Fatalf("create pending user: %v", err)
+	}
+	section := "A"
+	member := models.Member{
+		UserID:             user.ID,
+		Name:               "Pending Attendance Member",
+		USN:                &usn,
+		LoginID:            loginID,
+		AcademicYear:       1,
+		Branch:             "CSE",
+		Section:            &section,
+		Email:              "",
+		Phone:              "",
+		MustChangePassword: true,
+		Status:             memberStatusPendingEnrollment,
+	}
+	if err := env.db.Create(&member).Error; err != nil {
+		t.Fatalf("create pending member: %v", err)
+	}
+	memberSession := models.MemberEnrollmentSession{
+		SessionUID: fmt.Sprintf("pending-details-%d", suffix),
+		MemberID:   member.ID,
+		Status:     enrollmentStatusPendingDetails,
+		IsActive:   true,
+	}
+	if err := env.db.Create(&memberSession).Error; err != nil {
+		t.Fatalf("create pending details session: %v", err)
+	}
+
+	create := env.request(t, http.MethodPost, fmt.Sprintf("/api/v1/attendance-terminals/%d/enrollment-sessions", terminal.ID), adminToken, "", gin.H{
+		"member_id": member.ID,
+	})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create enrollment status = %d: %s", create.Code, create.Body.String())
+	}
+	var enrollment attendanceEnrollmentResponse
+	if err := json.Unmarshal(create.Body.Bytes(), &enrollment); err != nil {
+		t.Fatalf("decode enrollment: %v", err)
+	}
+	if enrollment.Enrollment.SessionUID == "" || enrollment.Enrollment.FingerprintSlot == nil {
+		t.Fatalf("enrollment missing session or slot: %s", create.Body.String())
+	}
+	slot := *enrollment.Enrollment.FingerprintSlot
+	sessionPath := fmt.Sprintf("/api/v1/attendance-terminal/enrollment-sessions/%s", enrollment.Enrollment.SessionUID)
+	if claim := env.request(t, http.MethodPost, sessionPath+"/claim", "", terminalKey, gin.H{}); claim.Code != http.StatusOK {
+		t.Fatalf("claim status = %d: %s", claim.Code, claim.Body.String())
+	}
+	complete := env.request(t, http.MethodPost, sessionPath+"/complete", "", terminalKey, gin.H{
+		"fingerprint_slot": slot,
+	})
+	if complete.Code != http.StatusOK {
+		t.Fatalf("complete status = %d: %s", complete.Code, complete.Body.String())
+	}
+
+	var updatedMember models.Member
+	if err := env.db.First(&updatedMember, member.ID).Error; err != nil {
+		t.Fatalf("reload member: %v", err)
+	}
+	if updatedMember.Status != "active" {
+		t.Fatalf("member status = %q, want active", updatedMember.Status)
+	}
+	var updatedUser models.User
+	if err := env.db.First(&updatedUser, user.ID).Error; err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if !updatedUser.Active {
+		t.Fatal("user should be active after attendance enrollment")
+	}
+	var finalized models.MemberEnrollmentSession
+	if err := env.db.First(&finalized, memberSession.ID).Error; err != nil {
+		t.Fatalf("reload member enrollment session: %v", err)
+	}
+	if finalized.Status != enrollmentStatusFinalized || finalized.IsActive {
+		t.Fatalf("member enrollment session = %+v, want finalized and inactive", finalized)
+	}
+	var mapping models.BiometricEnrollment
+	if err := env.db.Where("member_id = ? AND device_registration_id = ?", member.ID, terminal.ID).First(&mapping).Error; err != nil {
+		t.Fatalf("load mapping: %v", err)
+	}
+	if mapping.FingerprintSlot == nil || *mapping.FingerprintSlot != slot {
+		t.Fatalf("mapping slot = %v, want %d", mapping.FingerprintSlot, slot)
 	}
 }

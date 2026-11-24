@@ -41,7 +41,7 @@ const (
 	enrollmentCancelStatementTimeout = 10 * time.Second
 	enrollmentCancelRequestTimeout   = 15 * time.Second
 	enrollmentSlotMin                = 1
-	enrollmentSlotMax                = 127
+	enrollmentSlotMax                = 1000
 )
 
 var (
@@ -1119,7 +1119,7 @@ func (s *Server) updateEnrollmentSessionProgress(c *gin.Context) {
 		return
 	}
 	if request.FingerprintSlot != nil && !validateEnrollmentSlot(*request.FingerprintSlot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 
@@ -1165,7 +1165,7 @@ func (s *Server) failEnrollmentSession(c *gin.Context) {
 		return
 	}
 	if request.FingerprintSlot != nil && !validateEnrollmentSlot(*request.FingerprintSlot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 	now := time.Now().UTC()
@@ -1219,7 +1219,7 @@ func (s *Server) completeEnrollmentSession(c *gin.Context) {
 		return
 	}
 	if !validateEnrollmentSlot(request.FingerprintSlot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 	slot := request.FingerprintSlot
@@ -1445,7 +1445,7 @@ func (s *Server) acknowledgeEnrollmentCleanup(c *gin.Context) {
 	}
 	if request.FingerprintSlot != nil {
 		if !validateEnrollmentSlot(*request.FingerprintSlot) {
-			fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+			fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 			return
 		}
 		if session.FingerprintSlot != nil && *session.FingerprintSlot != *request.FingerprintSlot {

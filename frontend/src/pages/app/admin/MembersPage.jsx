@@ -235,7 +235,10 @@ function CreateMemberDialog({ onClose, onCreated }) {
     academic_year: "1",
     identifier_type: "",
     identifier: "",
+    branch: "",
+    section: "",
     email: "",
+    phone: "",
   });
   const [errors, setErrors] = useState({});
   const [formError, setFormError] = useState(null);
@@ -287,9 +290,13 @@ function CreateMemberDialog({ onClose, onCreated }) {
     } else if (values.identifier_type === "roll_number" && !/^[\w-]+$/.test(identifier)) {
       nextErrors.identifier = "Roll Number contains invalid characters.";
     }
-    if (!values.email.trim()) nextErrors.email = "Gmail address is required.";
-    else if (!/^[^\s@]+@gmail\.com$/i.test(values.email.trim())) {
+    if (!values.branch.trim()) nextErrors.branch = "Branch is required.";
+    if (!values.section.trim()) nextErrors.section = "Section is required.";
+    if (values.email.trim() && !/^[^\s@]+@gmail\.com$/i.test(values.email.trim())) {
       nextErrors.email = "Enter a valid Gmail address ending in @gmail.com.";
+    }
+    if (values.phone.trim() && !/^\+?[1-9]\d{7,14}$/.test(values.phone.trim())) {
+      nextErrors.phone = "Use an international format such as +919876543210.";
     }
 
     setErrors(nextErrors);
@@ -305,7 +312,10 @@ function CreateMemberDialog({ onClose, onCreated }) {
         identifier_type: values.identifier_type,
         usn: isUSN ? identifier.toUpperCase() : "",
         roll_number: isUSN ? "" : identifier,
+        branch: values.branch.trim(),
+        section: values.section.trim(),
         email: values.email.trim(),
+        phone: values.phone.trim(),
       });
       onCreated(result);
     } catch (error) {
@@ -320,7 +330,7 @@ function CreateMemberDialog({ onClose, onCreated }) {
       open
       onClose={onClose}
       title="Add member · Member information"
-      description="Start with the four details needed to create a member record."
+      description="Start with the details needed to create a member record."
       size="lg"
       footer={
         <>
@@ -414,12 +424,29 @@ function CreateMemberDialog({ onClose, onCreated }) {
               disabled={saving || !values.identifier_type}
             />
           </Field>
+          <Field label="Branch" htmlFor="new-member-branch" error={errors.branch} required>
+            <TextInput
+              id="new-member-branch"
+              value={values.branch}
+              onChange={update("branch")}
+              placeholder="CSE"
+              disabled={saving}
+            />
+          </Field>
+          <Field label="Section" htmlFor="new-member-section" error={errors.section} required>
+            <TextInput
+              id="new-member-section"
+              value={values.section}
+              onChange={update("section")}
+              placeholder="A"
+              disabled={saving}
+            />
+          </Field>
           <Field
             label="Gmail address"
             htmlFor="new-member-email"
             error={errors.email}
-            hint="Confirmation and account recovery emails are sent here."
-            required
+            hint="Optional. Confirmation and account recovery emails are sent here."
           >
             <TextInput
               id="new-member-email"
@@ -428,6 +455,22 @@ function CreateMemberDialog({ onClose, onCreated }) {
               onChange={update("email")}
               autoComplete="email"
               placeholder="member@gmail.com"
+              disabled={saving}
+            />
+          </Field>
+          <Field
+            label="Phone"
+            htmlFor="new-member-phone"
+            error={errors.phone}
+            hint="Optional. Use an international format."
+          >
+            <TextInput
+              id="new-member-phone"
+              type="tel"
+              value={values.phone}
+              onChange={update("phone")}
+              autoComplete="tel"
+              placeholder="+919876543210"
               disabled={saving}
             />
           </Field>

@@ -49,10 +49,10 @@
 #endif
 
 #ifndef WIFI_SSID
-#define WIFI_SSID "CHANGE_ME_WIFI_SSID"
+#define WIFI_SSID "Edwins"
 #endif
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "CHANGE_ME_WIFI_PASSWORD"
+#define WIFI_PASSWORD "OpenSource@2008"
 #endif
 
 // Backend base URL, without a trailing slash.

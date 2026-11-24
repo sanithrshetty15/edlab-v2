@@ -50,7 +50,7 @@ func (s *Server) authorizeDoorAccess(c *gin.Context) {
 		return
 	}
 	if request.FingerprintSlot == nil || !validateEnrollmentSlot(*request.FingerprintSlot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 	readerKey := normalizeEnrollmentReaderKey(request.ReaderKey)

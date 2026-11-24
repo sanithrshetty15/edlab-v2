@@ -179,9 +179,13 @@ func (s *Server) createMember(c *gin.Context) {
 	if academicYear < 1 || academicYear > 4 {
 		validationErrors = append(validationErrors, "Academic year must be between 1 and 4")
 	}
-	if email == "" {
-		validationErrors = append(validationErrors, "Email is required")
-	} else if !isGmailAddress(email) {
+	if branch == "" {
+		validationErrors = append(validationErrors, "Branch is required")
+	}
+	if section == "" {
+		validationErrors = append(validationErrors, "Section is required")
+	}
+	if email != "" && !isGmailAddress(email) {
 		validationErrors = append(validationErrors, "Please provide a valid Gmail address ending in @gmail.com")
 	}
 	if loginID == "" {
@@ -208,9 +212,6 @@ func (s *Server) createMember(c *gin.Context) {
 	if len(validationErrors) > 0 {
 		failValidation(c, strings.Join(validationErrors, ", "), validationErrors)
 		return
-	}
-	if branch == "" {
-		branch = "Not specified"
 	}
 	if password == "" {
 		generatedPassword, err := generateTemporaryMemberPassword()
@@ -252,13 +253,15 @@ func (s *Server) createMember(c *gin.Context) {
 			return
 		}
 	}
-	if err := s.DB.WithContext(ctx).Model(&models.User{}).Where("LOWER(email) = ?", email).Count(&count).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "Unable to create member")
-		return
-	}
-	if count > 0 {
-		fail(c, http.StatusUnprocessableEntity, "An account with this email already exists")
-		return
+	if email != "" {
+		if err := s.DB.WithContext(ctx).Model(&models.User{}).Where("LOWER(email) = ?", email).Count(&count).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "Unable to create member")
+			return
+		}
+		if count > 0 {
+			fail(c, http.StatusUnprocessableEntity, "An account with this email already exists")
+			return
+		}
 	}
 	if normalized != "" {
 		if err := s.DB.WithContext(ctx).Model(&models.User{}).Where("phone = ?", normalized).Count(&count).Error; err != nil {

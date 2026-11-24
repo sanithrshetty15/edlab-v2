@@ -75,7 +75,7 @@ constexpr size_t kMaxQueuePayloadBytes = 220;
 
 constexpr uint32_t kNetworkTaskStackBytes = 16384;
 constexpr uint32_t kNetworkTaskPriority = 1;
-constexpr uint8_t kNetworkTaskCore = 0;
+constexpr uint8_t kNetworkTaskCore = 1;
 
 constexpr bool kInsecureHttpAllowed = ATTENDANCE_ALLOW_INSECURE_HTTP != 0;
 

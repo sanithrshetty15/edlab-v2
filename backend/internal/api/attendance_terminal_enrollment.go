@@ -17,6 +17,7 @@ var (
 	errAttendanceNonAttendanceMapping = errors.New("member already has a non-attendance mapping on this terminal")
 	errAttendanceMemberSlotConflict   = errors.New("member already has a different fingerprint slot on this terminal")
 	errAttendanceSlotTaken            = errors.New("fingerprint slot is already assigned to another member")
+	errAttendanceMemberUnavailable    = errors.New("member is no longer available for attendance enrollment")
 )
 
 var attendanceProgressStatuses = map[string]bool{
@@ -313,8 +314,8 @@ func (s *Server) updateAttendanceEnrollmentProgress(c *gin.Context) {
 		fail(c, http.StatusUnprocessableEntity, "Invalid enrollment status")
 		return
 	}
-	if request.FingerprintSlot != nil && !validateEnrollmentSlot(*request.FingerprintSlot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+	if request.FingerprintSlot != nil && !validateAttendanceSlot(*request.FingerprintSlot) {
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 	now := time.Now().UTC()
@@ -439,8 +440,8 @@ func (s *Server) failAttendanceEnrollmentSession(c *gin.Context) {
 	if !bindJSON(c, &request) {
 		return
 	}
-	if request.FingerprintSlot != nil && !validateEnrollmentSlot(*request.FingerprintSlot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+	if request.FingerprintSlot != nil && !validateAttendanceSlot(*request.FingerprintSlot) {
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 	now := time.Now().UTC()
@@ -507,8 +508,8 @@ func (s *Server) completeAttendanceEnrollmentSession(c *gin.Context) {
 	if slot == 0 && session.FingerprintSlot != nil {
 		slot = *session.FingerprintSlot
 	}
-	if slot != 0 && !validateEnrollmentSlot(slot) {
-		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 127")
+	if slot != 0 && !validateAttendanceSlot(slot) {
+		fail(c, http.StatusUnprocessableEntity, "Fingerprint slot must be between 1 and 1000")
 		return
 	}
 	if session.Operation == attendanceSessionOperationEnroll && slot == 0 {
@@ -523,9 +524,16 @@ func (s *Server) completeAttendanceEnrollmentSession(c *gin.Context) {
 	}
 
 	var mapping *models.BiometricEnrollment
+	activated := false
 	err := s.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockAttendanceMember(tx, member.ID); err != nil {
 			return err
+		}
+		if err := tx.Where("id = ? AND deleted_at IS NULL", member.ID).First(&member).Error; err != nil {
+			return err
+		}
+		if member.Status != "active" && member.Status != memberStatusPendingEnrollment {
+			return errAttendanceMemberUnavailable
 		}
 		if session.Operation == attendanceSessionOperationDelete {
 			if err := tx.Where("member_id = ? AND device_registration_id = ? AND reader_key = ?", member.ID, device.ID, attendanceReaderKey).
@@ -583,6 +591,34 @@ func (s *Server) completeAttendanceEnrollmentSession(c *gin.Context) {
 			}
 		}
 
+		if session.Operation == attendanceSessionOperationEnroll && member.Status == memberStatusPendingEnrollment {
+			if err := tx.Model(&models.Member{}).
+				Where("id = ? AND status = ?", member.ID, memberStatusPendingEnrollment).
+				Update("status", "active").Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.User{}).
+				Where("id = ?", member.UserID).
+				Update("active", true).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&models.MemberEnrollmentSession{}).
+				Where("member_id = ? AND is_active = true", member.ID).
+				Updates(map[string]any{
+					"status":           enrollmentStatusFinalized,
+					"is_active":        false,
+					"completed_at":     now,
+					"cleanup_required": false,
+					"error_code":       nil,
+					"error_message":    nil,
+					"updated_at":       now,
+				}).Error; err != nil {
+				return err
+			}
+			member.Status = "active"
+			activated = true
+		}
+
 		updates := map[string]any{
 			"status":           attendanceSessionStatusCompleted,
 			"is_active":        false,
@@ -615,7 +651,8 @@ func (s *Server) completeAttendanceEnrollmentSession(c *gin.Context) {
 		switch {
 		case errors.Is(err, errAttendanceNonAttendanceMapping),
 			errors.Is(err, errAttendanceMemberSlotConflict),
-			errors.Is(err, errAttendanceSlotTaken):
+			errors.Is(err, errAttendanceSlotTaken),
+			errors.Is(err, errAttendanceMemberUnavailable):
 			fail(c, http.StatusConflict, err.Error())
 		default:
 			s.Log.Error("attendance enrollment completion failed", "session_id", session.ID, "error", err)
@@ -628,16 +665,24 @@ func (s *Server) completeAttendanceEnrollmentSession(c *gin.Context) {
 	if session.Operation == attendanceSessionOperationDelete {
 		action = "attendance_fingerprint_removed"
 	}
+	var registrationEmail any
+	if activated {
+		registrationEmail = serializeRegistrationEmail(
+			s.queueRegistrationConfirmation(ctx, &member, false),
+		)
+	}
 	s.writeDeviceAudit(c, action, "Member", &member.ID, gin.H{
 		"device_id":        device.ID,
 		"session_uid":      session.SessionUID,
 		"fingerprint_slot": session.FingerprintSlot,
+		"member_activated": activated,
 	})
 	c.JSON(http.StatusOK, gin.H{
-		"success":    true,
-		"message":    "Attendance enrollment completed",
-		"enrollment": serializeAttendanceEnrollmentSession(session, &member, device),
-		"mapping":    serializeAttendanceMapping(mapping, &member),
+		"success":            true,
+		"message":            "Attendance enrollment completed",
+		"enrollment":         serializeAttendanceEnrollmentSession(session, &member, device),
+		"mapping":            serializeAttendanceMapping(mapping, &member),
+		"registration_email": registrationEmail,
 	})
 }
 

@@ -404,6 +404,7 @@ bool ApiClient::syncBatch(const String& requestBody, BatchResult& result, int& h
 
 bool ApiClient::sendHeartbeat(const HeartbeatInfo& info) {
   JsonDocument request;
+
   request["firmware_version"] = info.firmwareVersion;
   request["reader_model"] = info.readerModel;
   request["reader_connected"] = info.readerConnected;
@@ -413,23 +414,49 @@ bool ApiClient::sendHeartbeat(const HeartbeatInfo& info) {
   request["reader_uart"] = info.readerUart;
   request["queue_depth"] = info.queueDepth;
   request["network_status"] = info.networkStatus;
+
   char timestamp[24];
+
   if (timeutil::formatIso8601(info.lastSyncEpoch, timestamp, sizeof(timestamp))) {
     request["last_sync_at"] = timestamp;
   }
+
   if (timeutil::formatIso8601(info.lastCaptureEpoch, timestamp, sizeof(timestamp))) {
     request["last_capture_at"] = timestamp;
   }
+
   String body;
   serializeJson(request, body);
 
   lock(mutex_);
   String response;
   int status = 0;
-  const bool ok = requestLocked("POST", kHeartbeatPath, body, response, status,
-                                config::kHttpTimeoutMs, true);
+
+  const bool transportOk = requestLocked(
+      "POST",
+      kHeartbeatPath,
+      body,
+      response,
+      status,
+      config::kHttpTimeoutMs,
+      true
+  );
+
   releaseLock(mutex_);
-  return ok && status >= 200 && status < 300;
+
+  if (!transportOk) {
+    ATT_LOG_E(kTag, "Heartbeat transport failed: HTTP %d", status);
+    return false;
+  }
+
+  if (status < 200 || status >= 300) {
+    ATT_LOG_E(kTag, "Heartbeat rejected: HTTP %d | response: %s",
+              status, response.c_str());
+    return false;
+  }
+
+  ATT_LOG_I(kTag, "Heartbeat successful: HTTP %d", status);
+  return true;
 }
 
 bool ApiClient::pollEnrollment(EnrollmentInfo& info, int& httpStatus) {

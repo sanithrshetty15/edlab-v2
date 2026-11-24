@@ -47,6 +47,10 @@ bool scanCooldownElapsed(uint32_t nowMs, uint32_t lastScanMs, uint32_t cooldownM
 // Wrap-safe deadline check for millis()-based deadlines.
 bool timeReached(uint32_t nowMs, uint32_t targetMs);
 
+constexpr int kFingerprintSlotMin = 1;
+constexpr int kFingerprintSlotMax = 1000;
+constexpr int kFingerprintCapacity = kFingerprintSlotMax - kFingerprintSlotMin + 1;
+
 bool isValidSlot(int slot);
 bool isValidIdempotencyKey(const char* value);
 

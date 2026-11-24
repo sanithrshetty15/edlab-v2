@@ -140,12 +140,16 @@ bool FingerprintReader::image2Tz(uint8_t bufferId) {
   return ok;
 }
 
-bool FingerprintReader::search(uint16_t& slot) { return searchRange(1, 127, slot); }
+bool FingerprintReader::search(uint16_t& slot) {
+  return searchRange(static_cast<uint16_t>(kFingerprintSlotMin),
+                     static_cast<uint16_t>(kFingerprintCapacity), slot);
+}
 
 bool FingerprintReader::searchRange(uint16_t startSlot, uint16_t slotCount, uint16_t& slot) {
   slot = 0;
   if (!validSlot(startSlot) || slotCount == 0 ||
-      static_cast<uint32_t>(startSlot) + slotCount > 128) {
+      static_cast<uint32_t>(startSlot) + slotCount >
+          static_cast<uint32_t>(kFingerprintSlotMax) + 1) {
     return false;
   }
   const uint8_t params[5] = {0x01,

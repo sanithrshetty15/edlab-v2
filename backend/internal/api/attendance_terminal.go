@@ -41,6 +41,10 @@ const (
 	attendanceSessionStatusCancelled  = "cancelled"
 	attendanceSessionStatusExpired    = "expired"
 
+	attendanceSlotMin      = 1
+	attendanceSlotMax      = 1000
+	attendanceSlotCapacity = attendanceSlotMax - attendanceSlotMin + 1
+
 	attendanceDedupeWindow      = 10 * time.Second
 	attendanceSyncedLateAfter   = 60 * time.Second
 	attendanceClockSkew         = 5 * time.Minute
@@ -98,6 +102,10 @@ type attendanceScanTiming struct {
 	SyncedLate bool
 }
 
+func validateAttendanceSlot(slot int) bool {
+	return slot >= attendanceSlotMin && slot <= attendanceSlotMax
+}
+
 func attendanceTerminalFromContext(c *gin.Context) (*models.DeviceRegistration, bool) {
 	device := currentDevice(c)
 	if device == nil {
@@ -140,8 +148,8 @@ func normalizeAttendanceScanRequest(request *attendanceScanRequest) error {
 	}
 	switch request.Result {
 	case "match":
-		if request.FingerprintSlot == nil || !validateEnrollmentSlot(*request.FingerprintSlot) {
-			return errors.New("fingerprint_slot must be between 1 and 127 for a matched scan")
+		if request.FingerprintSlot == nil || !validateAttendanceSlot(*request.FingerprintSlot) {
+			return errors.New("fingerprint_slot must be between 1 and 1000 for a matched scan")
 		}
 	case "no_match":
 		if request.FingerprintSlot != nil {

@@ -55,7 +55,9 @@ void testSlotValidation() {
   TEST_ASSERT_FALSE(isValidSlot(0));
   TEST_ASSERT_TRUE(isValidSlot(1));
   TEST_ASSERT_TRUE(isValidSlot(127));
-  TEST_ASSERT_FALSE(isValidSlot(128));
+  TEST_ASSERT_TRUE(isValidSlot(128));
+  TEST_ASSERT_TRUE(isValidSlot(1000));
+  TEST_ASSERT_FALSE(isValidSlot(1001));
 }
 
 void testIdempotencyKeyValidation() {
