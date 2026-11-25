@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { membersManagementApi, attendanceTerminalsApi } from "../../../api/services";
 import { ConfirmDialog, Modal } from "../../../components/app/Modal";
-import ReaderStatusPanel from "./ReaderStatusPanel";
+import { ReaderStatusPanel } from "./ReaderStatusPanel";
 import {
   Alert,
   AppButton,
