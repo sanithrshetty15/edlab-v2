@@ -1,21 +1,22 @@
-import { useMemo, useState } from "react";
-import { attendanceApi, membersManagementApi } from "../../../api/services";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { attendanceApi, membersManagementApi, attendanceTerminalsApi } from "../../../api/services";
 import { useApiResource } from "../../../hooks/useApiResource";
 import { ConfirmDialog, Modal } from "../../../components/app/Modal";
 import {
   Alert,
   AppButton,
+  Avatar,
   Badge,
   EmptyState,
   ErrorState,
   Field,
   LoadingState,
-  PageHeader,
-  Pagination,
   Panel,
+  SegmentedControl,
   Select,
+  StatusBadge,
   StatCard,
-  TextInput,
+  Tabs,
 } from "../../../components/app/Ui";
 import {
   CheckCircleIcon,
@@ -23,6 +24,7 @@ import {
   PlusIcon,
   RefreshIcon,
   UsersIcon,
+  AlertIcon,
 } from "../../../components/app/AppIcons";
 import {
   daysAgoIso,
@@ -31,9 +33,67 @@ import {
   formatNumber,
   toIsoDate,
   titleCase,
+  formatRelative,
 } from "../../../utils/format";
 
 const SOURCE_OPTIONS = ["manual", "biometric", "card", "other"];
+
+function LiveEvent({ event }) {
+  const OUTCOME_META = {
+    entry: { label: "Entry", tone: "success", icon: CheckCircleIcon, iconTone: "accent" },
+    exit: { label: "Exit", tone: "info", icon: ClockIcon, iconTone: "info" },
+    duplicate: { label: "Duplicate", tone: "warning", icon: ClockIcon, iconTone: "warning" },
+    no_match: { label: "Not recognized", tone: "danger", icon: AlertIcon, iconTone: "warning" },
+    unknown_slot: { label: "Unmapped slot", tone: "danger", icon: AlertIcon, iconTone: "warning" },
+    member_inactive: { label: "Member inactive", tone: "danger", icon: AlertIcon, iconTone: "warning" },
+    user_disabled: { label: "Account disabled", tone: "danger", icon: AlertIcon, iconTone: "warning" },
+  };
+
+  const OUTCOME_FALLBACK = {
+    no_match: "Fingerprint not recognized",
+    unknown_slot: "Fingerprint not enrolled on this terminal",
+    member_inactive: "Inactive member",
+    user_disabled: "Disabled member account",
+  };
+
+  const meta = OUTCOME_META[event.outcome] || {
+    label: titleCase(event.outcome || "event"),
+    tone: "neutral",
+    icon: ClockIcon,
+    iconTone: "neutral",
+  };
+  const Icon = meta.icon;
+  const member = event.member;
+  const secondary = member
+    ? [member.login_id, member.usn].filter(Boolean).join(" · ")
+    : event.member_identifier || "No member matched";
+  const terminalName = event.terminal?.name || event.terminal?.device_uid || "Attendance terminal";
+
+  return (
+    <li className="lab-feed__item">
+      <span className={`lab-activity__icon lab-activity__icon--${meta.iconTone}`} aria-hidden="true">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div className="lab-feed__copy">
+        <div className="lab-live-event__title">
+          <strong>{member?.name || OUTCOME_FALLBACK[event.outcome] || "Attendance event"}</strong>
+          <Badge tone={meta.tone}>{meta.label}</Badge>
+          {event.synced_late && <Badge tone="neutral">Synced late</Badge>}
+        </div>
+        <p>{secondary}</p>
+        <p>
+          {terminalName}
+          {member?.academic_year ? ` · Year ${member.academic_year}` : ""}
+          {event.fingerprint_slot ? ` · slot ${event.fingerprint_slot}` : ""}
+        </p>
+      </div>
+      <div className="lab-live-event__time">
+        <time dateTime={event.occurred_at}>{formatTime(event.occurred_at)}</time>
+        <span>{formatRelative(event.occurred_at)}</span>
+      </div>
+    </li>
+  );
+}
 
 function ManualAttendanceDialog({ members, onClose, onSaved }) {
   const [memberId, setMemberId] = useState("");
@@ -164,6 +224,79 @@ function ManualAttendanceDialog({ members, onClose, onSaved }) {
   );
 }
 
+function MemberDetailPanel({ member, onClose }) {
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={member?.name || "Member record"}
+      description={member ? `${member.login_id || "No login ID"} · ${member.email || "No email"}` : undefined}
+      size="lg"
+      footer={
+        <>
+          <AppButton variant="ghost" onClick={onClose}>Close</AppButton>
+        </>
+      }
+    >
+      {member ? (
+        <div className="lab-member-detail">
+          <div className="lab-member-detail__identity">
+            <Avatar name={member.name} size="lg" />
+            <div>
+              <p className="lab-muted lab-small">
+                Member since {formatDate(member.created_at)}
+              </p>
+            </div>
+          </div>
+
+          <DefinitionList
+            items={[
+              { label: "Login ID", value: member.login_id },
+              { label: "USN", value: member.usn },
+              { label: "Academic year", value: member.academic_year ? `Year ${member.academic_year}` : "—" },
+              { label: "Branch", value: member.branch },
+              { label: "Section", value: member.section },
+              { label: "Email", value: member.email },
+              { label: "Phone", value: member.phone || "—" },
+            ]}
+          />
+
+          <div className="lab-member-detail__section">
+            <h3>Status</h3>
+            <StatusBadge status={member.status}>
+              {member.status === "pending_enrollment" ? "Awaiting fingerprint" : undefined}
+            </StatusBadge>
+            {member.must_change_password && <Badge tone="warning">Password reset required</Badge>}
+          </div>
+
+          <div className="lab-member-detail__section">
+            <h3>Today's attendance</h3>
+            <p>
+              <strong>Entry:</strong> {"—"}
+            </p>
+            <p>
+              <strong>Exit:</strong> {"—"}
+            </p>
+          </div>
+
+          <div className="lab-member-detail__section">
+            <h3>Completed hours</h3>
+            <p>Today: {"—"} hours</p>
+            <p>This week: {"—"} hours</p>
+            <p>This month: {"—"} hours</p>
+            <p>All time: {"—"} hours</p>
+          </div>
+
+          <div className="lab-member-detail__section">
+            <h3>Recent sessions</h3>
+            <p>Most recent: {"No sessions recorded"}</p>
+          </div>
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
+
 export default function AttendancePage() {
   const [filters, setFilters] = useState({
     page: 1,
@@ -172,14 +305,18 @@ export default function AttendancePage() {
     branch: "",
     year: "",
     source: "",
+    outcomeFilter: "",
+    terminalFilter: "",
+    tab: "live",
   });
   const [formOpen, setFormOpen] = useState(false);
   const [logoutTarget, setLogoutTarget] = useState(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [notice, setNotice] = useState(null);
   const [actionError, setActionError] = useState(null);
+  const [tab, setTab] = useState("live");
 
-  const query = useMemo(
+  const recordsQuery = useMemo(
     () => ({
       page: filters.page,
       per_page: 25,
@@ -192,9 +329,21 @@ export default function AttendancePage() {
     [filters],
   );
 
-  const resource = useApiResource(
-    () => attendanceApi.list(query),
-    `attendance-${JSON.stringify(query)}`,
+  const liveQuery = useMemo(
+    () => ({
+      limit: 50,
+      after_id: filters.liveAfterId || undefined,
+    }),
+    [filters.liveAfterId],
+  );
+
+  const recordsResource = useApiResource(
+    () => attendanceApi.list(recordsQuery),
+    `attendance-records-${JSON.stringify(recordsQuery)}`,
+  );
+  const liveResource = useApiResource(
+    () => attendanceTerminalsApi.live(liveQuery),
+    `attendance-live-${JSON.stringify(liveQuery)}`,
   );
   const analyticsResource = useApiResource(
     () => attendanceApi.analytics({ date_from: daysAgoIso(29), date_to: toIsoDate(new Date()) }),
@@ -205,9 +354,24 @@ export default function AttendancePage() {
     "attendance-member-options",
   );
 
-  const records = resource.data?.attendance ?? [];
+  const records = recordsResource.data?.attendance ?? [];
+  const liveEvents = liveResource.data?.events ?? [];
+  const liveAfterId = liveResource.latest_id ?? 0;
   const analytics = analyticsResource.data?.analytics;
   const members = membersResource.data?.members ?? [];
+
+  const [statusBusy, setStatusBusy] = useState(null);
+  const [detailMember, setDetailMember] = useState(null);
+
+  const handleTabChange = useCallback(
+    (newTab) => {
+      setTab(newTab);
+      if (newTab === "records") {
+        setFilters((current) => ({ ...current, page: 1, outcomeFilter: "", terminalFilter: "" }));
+      }
+    },
+    [],
+  );
 
   const handleLogout = async () => {
     if (!logoutTarget || logoutBusy) return;
@@ -217,7 +381,8 @@ export default function AttendancePage() {
       await attendanceApi.recordLogout(logoutTarget.id);
       setNotice("Logout recorded.");
       setLogoutTarget(null);
-      resource.reload();
+      recordsResource.reload();
+      liveResource.reload();
       analyticsResource.reload();
     } catch (error) {
       setActionError(error);
@@ -225,6 +390,54 @@ export default function AttendancePage() {
       setLogoutBusy(false);
     }
   };
+
+  useEffect(() => {
+    if (tab !== "live") return undefined;
+    let stopped = false;
+    let timer = null;
+    let controller = null;
+
+    const poll = async () => {
+      controller = new AbortController();
+      try {
+        const result = await attendanceTerminalsApi.live(liveQuery, { signal: controller.signal });
+        if (stopped) return;
+        const incoming = [...(result.events || [])].reverse();
+        setLiveEventsLocal(incoming);
+        if (result.latest_id) liveAfterIdRef.current = result.latest_id;
+        setLiveError(null);
+      } catch (pollError) {
+        if (stopped || pollError?.code === "aborted") return;
+        setLiveError(pollError);
+      } finally {
+        if (!stopped) {
+          setLiveLoading(false);
+          timer = window.setTimeout(poll, 3000);
+        }
+      }
+    };
+
+    poll();
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+      controller?.abort();
+    };
+  }, [tab, liveQuery]);
+
+  const liveAfterIdRef = useRef(liveAfterId);
+
+  const [liveEventsLocal, setLiveEventsLocal] = useState([]);
+  const [liveError, setLiveError] = useState(null);
+  const [liveLoading, setLiveLoading] = useState(true);
+
+  const openMemberDetail = useCallback((member) => {
+    setDetailMember(member);
+  }, []);
+
+  const closeMemberDetail = useCallback(() => {
+    setDetailMember(null);
+  }, []);
 
   return (
     <>
@@ -234,7 +447,7 @@ export default function AttendancePage() {
         description="Review lab sessions, record manual entries and close open check-ins."
         actions={
           <>
-            <AppButton variant="outline" onClick={() => resource.reload()} loading={resource.loading}>
+            <AppButton variant="outline" onClick={() => recordsResource.reload()} loading={recordsResource.loading}>
               <RefreshIcon className="h-4 w-4" />
               Refresh
             </AppButton>
@@ -327,7 +540,7 @@ export default function AttendancePage() {
                 className="lab-select--compact"
               >
                 <option value="">All years</option>
-                {[1, 2, 3, 4, 5, 6].map((year) => (
+                {[1, 2, 3, 4].map((year) => (
                   <option key={year} value={year}>Year {year}</option>
                 ))}
               </Select>
@@ -350,106 +563,146 @@ export default function AttendancePage() {
             <AppButton
               variant="ghost"
               size="sm"
-              onClick={() => setFilters({ page: 1, date: "", memberId: "", branch: "", year: "", source: "" })}
+              onClick={() =>
+                setFilters({
+                  page: 1,
+                  date: "",
+                  memberId: "",
+                  branch: "",
+                  year: "",
+                  source: "",
+                  outcomeFilter: "",
+                  terminalFilter: "",
+                  tab: "records",
+                })
+              }
             >
               Clear filters
             </AppButton>
           </div>
         </div>
 
-        <div className="lab-list-panel__body">
-          {resource.loading ? (
-            <LoadingState rows={8} />
-          ) : resource.error ? (
-            <ErrorState error={resource.error} onRetry={resource.reload} title="Attendance records are unavailable" />
-          ) : records.length === 0 ? (
-            <EmptyState
-              icon={ClockIcon}
-              title="No attendance records found"
-              description="Adjust the filters or record a manual entry."
-              action={
-                <AppButton variant="primary" onClick={() => setFormOpen(true)}>
-                  <PlusIcon className="h-4 w-4" />
-                  Record entry
-                </AppButton>
-              }
-            />
-          ) : (
-            <div className="lab-table-wrap">
-              <table className="lab-table">
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Date</th>
-                    <th>Entry</th>
-                    <th>Exit</th>
-                    <th>Source</th>
-                    <th>Recorded by</th>
-                    <th aria-label="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {records.map((record) => (
-                    <tr key={record.id}>
-                      <td>
-                        <div className="lab-member-academic">
-                          <strong>{record.member?.name || "Unknown member"}</strong>
-                          <small>{record.member?.login_id || record.member?.usn || "—"}</small>
-                        </div>
-                      </td>
-                      <td>{formatDate(record.entry_date)}</td>
-                      <td>{formatClockTime(record.entry_time)}</td>
-                      <td>
-                        {record.exit_time
-                          ? formatClockTime(record.exit_time)
-                          : <Badge tone="accent" dot>Open</Badge>}
-                      </td>
-                      <td><Badge tone="neutral">{titleCase(record.source)}</Badge></td>
-                      <td>{record.created_by || "Biometric sync"}</td>
-                      <td>
-                        {!record.exit_time && (
-                          <AppButton variant="ghost" size="sm" onClick={() => setLogoutTarget(record)}>
-                            Record logout
-                          </AppButton>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+        <div className="lab-toolbar lab-toolbar--wrap">
+          <Tabs
+            tabs={[
+              { value: "live", label: "Live feed" },
+              { value: "records", label: "Records" },
+            ]}
+            value={tab}
+            onChange={handleTabChange}
+            lab="tabs"
+          />
         </div>
 
-        {resource.data?.pagination && (
-          <Pagination
-            page={resource.data.pagination.page}
-            totalPages={resource.data.pagination.total_pages}
-            totalCount={resource.data.pagination.total_count}
-            onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
-            loading={resource.loading}
-          />
-        )}
-      </Panel>
+        <div className="lab-list-panel__body">
+          {tab === "records" ? (
+            {recordsResource.loading ? (
+              <LoadingState rows={8} />
+            ) : recordsResource.error ? (
+              <ErrorState error={recordsResource.error} onRetry={recordsResource.reload} title="Attendance records are unavailable" />
+            ) : records.length === 0 ? (
+              <EmptyState
+                icon={ClockIcon}
+                title="No attendance records found"
+                description="Adjust the filters or record a manual entry."
+                action={
+                  <AppButton variant="primary" onClick={() => setFormOpen(true)}>
+                    <PlusIcon className="h-4 w-4" />
+                    Record entry
+                  </AppButton>
+                }
+              />
+            ) : (
+              <div className="lab-table-wrap">
+                <table className="lab-table">
+                  <thead>
+                    <tr>
+                      <th>Member</th>
+                      <th>Date</th>
+                      <th>Entry</th>
+                      <th>Exit</th>
+                      <th>Source</th>
+                      <th>Recorded by</th>
+                      <th aria-label="Actions" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {records.map((record) => (
+                      <tr
+                        key={record.id}
+                        onClick={() => openMemberDetail(record.member)}
+                        style={{ cursor: "pointer" }}
+                      >
+                        <td>
+                          <div className="lab-member-academic">
+                            <strong>{record.member?.name || "Unknown member"}</strong>
+                            <small>{record.member?.login_id || record.member?.usn || "—"}</small>
+                          </div>
+                        </td>
+                        <td>{formatDate(record.entry_date)}</td>
+                        <td>{formatClockTime(record.entry_time)}</td>
+                        <td>
+                          {record.exit_time
+                            ? formatClockTime(record.exit_time)
+                            : <Badge tone="accent" dot>Open}</Badge>
+                        </td>
+                        <td><Badge tone="neutral">{titleCase(record.source)}</Badge></td>
+                        <td>{record.created_by || "Biometric sync"}</td>
+                        <td>
+                          {!record.exit_time && (
+                            <AppButton variant="ghost" size="sm" onClick={() => setLogoutTarget(record)}>
+                              Record logout
+                            </AppButton>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          ) : tab === "live" ? (
+            <Panel title="Live feed" subtitle="Fingerprint scans appear here as the attendance terminal submits them.">
+              {liveLoading ? (
+                <LoadingState label="Waiting for attendance events" rows={5} />
+              ) : liveError && !liveEvents.length ? (
+                <ErrorState
+                  error={liveError}
+                  title="The live feed is unavailable"
+                  onRetry={() => liveResource.reload()}
+                  compact
+                />
+              ) : liveEvents.length ? (
+                <ul className="lab-feed lab-live-feed">
+                  {liveEvents.map((event) => (
+                    <LiveEvent key={event.id} event={event} />
+                  ))}
+                </ul>
+              ) : (
+                <EmptyState
+                  icon={ClockIcon}
+                  title={liveEvents.length ? "No events match these filters" : "No attendance events yet"}
+                  description={
+                    liveEvents.length
+                      ? "Clear the filters to see every scan received by the backend."
+                      : "Scan a finger on an enrolled attendance terminal and the event will appear here within a few seconds."
+                  }
+                />
+              )}
+            </Panel>
+          ) : null}
 
-      {!analyticsResource.loading && analytics?.by_branch?.length > 0 && (
-        <Panel title="Attendance by branch" subtitle="Last 30 days of recorded events.">
-          <div className="lab-bars">
-            {analytics.by_branch.map((branch) => {
-              const max = Math.max(...analytics.by_branch.map((entry) => Number(entry.events) || 0), 1);
-              return (
-                <div key={branch.branch || "unassigned"} className="lab-bars__row">
-                  <span className="lab-bars__label">{branch.branch || "Unassigned"}</span>
-                  <div className="lab-bars__track">
-                    <span style={{ width: `${Math.max(((Number(branch.events) || 0) / max) * 100, 4)}%` }} />
-                  </div>
-                  <strong>{formatNumber(branch.events)}</strong>
-                </div>
-              );
-            })}
-          </div>
-        </Panel>
-      )}
+          {recordsResource.data?.pagination && (
+            <Pagination
+              page={recordsResource.data.pagination.page}
+              totalPages={recordsResource.data.pagination.total_pages}
+              totalCount={recordsResource.data.pagination.total_count}
+              onPageChange={(page) => setFilters((current) => ({ ...current, page }))}
+              loading={recordsResource.loading}
+            />
+          )}
+        </div>
+      </Panel>
 
       {formOpen && (
         <ManualAttendanceDialog
@@ -457,7 +710,8 @@ export default function AttendancePage() {
           onClose={() => setFormOpen(false)}
           onSaved={(result) => {
             setNotice(result.message || "Attendance recorded.");
-            resource.reload();
+            recordsResource.reload();
+            liveResource.reload();
             analyticsResource.reload();
           }}
         />
@@ -472,6 +726,8 @@ export default function AttendancePage() {
         confirmLabel="Record logout"
         loading={logoutBusy}
       />
+
+      {detailMember && <MemberDetailPanel member={detailMember} onClose={closeMemberDetail} />}
     </>
   );
 }

@@ -32,7 +32,6 @@ import { navigate, usePathname } from "../utils/router";
 const ADMIN_ROUTES = new Set([
   "/app/members",
   "/app/attendance",
-  "/app/live-attendance",
   "/app/tasks",
   "/app/inventory",
   "/app/borrowing",
@@ -57,7 +56,7 @@ function AccessDenied() {
   );
 }
 
-function routeContent(pathname, isAdmin) {
+function routeContent(pathname, isAdmin, navigate) {
   switch (pathname) {
     case "/app/dashboard":
       return <DashboardPage />;
@@ -81,10 +80,11 @@ function routeContent(pathname, isAdmin) {
       return <SettingsPage />;
     case "/app/members":
       return isAdmin ? <MembersPage /> : <AccessDenied />;
-    case "/app/attendance":
+case "/app/attendance":
       return isAdmin ? <AttendancePage /> : <AccessDenied />;
     case "/app/live-attendance":
-      return isAdmin ? <LiveAttendancePage /> : <AccessDenied />;
+      if (auth.isAdmin) navigate("/app/attendance", { replace: true });
+      return <AccessDenied />;
     case "/app/tasks":
       return isAdmin ? <TasksPage /> : <AccessDenied />;
     case "/app/inventory":
@@ -176,7 +176,7 @@ function PortalRoutes() {
 
   return (
     <AppLayout key={pathname}>
-      {routeContent(pathname, auth.isAdmin)}
+      {routeContent(pathname, auth.isAdmin, navigate)}
       <footer className="lab-footer">
         <span>Edwins Lab member platform</span>
         <AppLink to="/">Back to the public site</AppLink>

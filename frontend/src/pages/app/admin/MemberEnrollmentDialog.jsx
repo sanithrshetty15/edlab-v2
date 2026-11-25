@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { membersManagementApi } from "../../../api/services";
+import { membersManagementApi, attendanceTerminalsApi } from "../../../api/services";
 import { ConfirmDialog, Modal } from "../../../components/app/Modal";
+import ReaderStatusPanel from "./ReaderStatusPanel";
 import {
   Alert,
   AppButton,
@@ -538,6 +539,7 @@ export default function MemberEnrollmentDialog({
         size="lg"
         footer={footer}
       >
+        <ReaderStatusPanel memberId={member?.id} />
         <div className="lab-form-stack">
           <MemberRegistrationProgress current={success ? 3 : 2} />
 

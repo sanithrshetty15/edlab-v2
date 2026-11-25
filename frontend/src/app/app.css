@@ -1997,6 +1997,158 @@ body.password-mode::selection {
   font-size: 0.6rem;
 }
 
+.lab-member-card {
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  border: 1px solid var(--lab-line);
+  border-radius: 12px;
+  background: var(--lab-paper);
+  transition: box-shadow 0.2s ease;
+  margin-bottom: 0.75rem;
+  min-width: 0; /* allow flex shrinkage */
+  word-wrap: break-word;
+}
+
+.lab-member-card:hover {
+  box-shadow: 0 4px 12px rgba(28, 28, 28, 0.08);
+}
+
+.lab-member-card__avatar {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 0.75rem;
+}
+
+.lab-member-card__content strong {
+  font-size: 0.875rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+  display: block;
+}
+
+.lab-member-card__content p {
+  margin: 0.1rem 0 0;
+  font-size: 0.75rem;
+  color: var(--lab-muted);
+  line-height: 1.4;
+}
+
+.lab-member-card__badges .lab-badge {
+  font-size: 0.65rem;
+  margin-right: 0.25rem;
+}
+
+@media (max-width: 768px) {
+  .lab-table--members {
+    min-width: initial;
+    width: 100%;
+  }
+  
+  .lab-table--members thead {
+    display: none;
+  }
+  
+  .lab-table--members tbody tr {
+    display: flex;
+    flex-direction: column;
+    border-bottom: 1px solid var(--lab-line);
+    padding: 0.5rem 0;
+  }
+  
+  .lab-table--members tbody td {
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem 0;
+  }
+  
+  .lab-table--members tbody td .lab-member-cell {
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+  
+  .lab-table--members tbody td .lab-member-cell strong {
+    font-size: 0.75rem;
+  }
+  
+  .lab-table--members tbody td .lab-member-cell span {
+    font-size: 0.65rem;
+  }
+}
+
+.lab-table-selector input {
+  accent-color: var(--lab-accent, #a3e635);
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-right: 0.5rem;
+  margin-top: 0.1rem;
+}
+
+.lab-table-selector {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.lab-table-selector input:checked + .lab-checkbox-icon::after {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: var(--lab-accent, #a3e635);
+  border-radius: 2px;
+}
+
+.lab-otp-panel {
+  padding: 1.5rem;
+  max-width: 320px;
+  margin: 0 auto;
+}
+
+.lab-otp-inputs {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.lab-otp-input-wrapper {
+  display: flex;
+  align-items: center;
+}
+
+.lab-otp-input {
+  width: 44px;
+  height: 44px;
+  font-size: 1.5rem;
+  font-weight: bold;
+  text-align: center;
+  color: white;
+  background: var(--lab-accent, #a3e635);
+  border: none;
+  border-radius: 8px;
+  caret-color: transparent;
+  &:focus {
+    outline: 2px solid var(--lab-accent, #a3e635);
+    caret-color: auto;
+  }
+}
+
+.lab-otp-resend {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.875rem;
+  color: var(--lab-muted, #d1d5db);
+}
+
+.lab-otp-resend AppButton {
+  margin-left: 0.5rem;
+}
+
 .lab-due-cell {
   display: flex;
   flex-direction: column;
