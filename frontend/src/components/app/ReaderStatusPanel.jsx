@@ -7,18 +7,7 @@ import {
   EmptyState,
 } from "../../../components/app/Ui";
 import { ThreeDotLoader } from "./ThreeDotLoader";
-import { prefersReducedMotion } from "../../utils/reducedMotion";
 import { formatRelative } from "../../utils/format";
-
-const READINESS_LABELS = {
-  not_ready: "Not ready",
-  initializing: "Initializing",
-  ready: "Ready",
-  waiting_for_finger: "Waiting for finger",
-  finger_detected: "Finger detected",
-  capture_failed: "Capture failed",
-  enrolling: "Enrolling",
-};
 
 const TERMINAL_ONLINE_TONE = "success";
 const TERMINAL_OFFLINE_TONE = "danger";
@@ -27,11 +16,6 @@ function ReaderStatusPanel({ pollingInterval = 5000 }) {
   const [terminals, setTerminals] = useState([]);
   const [terminalError, setTerminalError] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [reducedMotion, setReducedMotion] = useState(false);
-
-  useEffect(() => {
-    setReducedMotion(prefersReducedMotion());
-  }, []);
 
   const poll = useCallback(async () => {
     setIsLoading(true);
