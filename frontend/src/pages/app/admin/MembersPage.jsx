@@ -668,6 +668,7 @@ export default function MembersPage() {
   const [searchInput, setSearchInput] = useState("");
   const [filters, setFilters] = useState({ search: "", status: "", year: "", page: 1 });
   const [selectedId, setSelectedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(new Set());
   const [detail, setDetail] = useState(null);
   const [detailEnrollment, setDetailEnrollment] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -677,6 +678,7 @@ export default function MembersPage() {
   const [enrolling, setEnrolling] = useState(null);
   const [confirmAction, setConfirmAction] = useState(null);
   const [actionBusy, setActionBusy] = useState(null);
+  const [otpAction, setOtpAction] = useState(null);
   const [notice, setNotice] = useState(null);
   const [actionError, setActionError] = useState(null);
 
@@ -759,6 +761,79 @@ export default function MembersPage() {
     }
   };
 
+  const handlePromoteSelected = async () => {
+    if (selectedIds.size === 0) return;
+    setActionBusy("promote_selected");
+    setActionError(null);
+    try {
+      const memberIds = Array.from(selectedIds);
+      for (const id of memberIds) {
+        await membersManagementApi.updateStatus(id, "active");
+      }
+      setNotice(`Promoted ${memberIds.length} member(s) to active.`);
+      resource.reload();
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setActionBusy(null);
+      setSelectedIds(new Set());
+    }
+  };
+
+  const handlePromoteAllActive = async () => {
+    setActionBusy("promote_all_active");
+    setActionError(null);
+    try {
+      const result = await membersManagementApi.listMembers({
+        status: "inactive",
+        page: 1,
+        per_page: 1000,
+      });
+      const inactiveMembers = result.members ?? [];
+      const memberIds = inactiveMembers.map((m) => m.id);
+      if (memberIds.length === 0) {
+        setNotice("No inactive members to promote.");
+        return;
+      }
+      for (const id of memberIds) {
+        await membersManagementApi.updateStatus(id, "active");
+      }
+      setNotice(`Promoted ${memberIds.length} member(s) to active.`);
+      resource.reload();
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setActionBusy(null);
+    }
+  };
+
+  const handleOtpAction = async (type, memberId) => {
+    setOtpAction({ type, memberId });
+  };
+
+  const handleOtpConfirm = async (otpCode) => {
+    if (!otpAction) return;
+    setActionBusy(otpAction.type);
+    setActionError(null);
+    try {
+      if (otpAction.type === "delete") {
+        await membersManagementApi.deactivate(otpAction.member.id);
+        setNotice("Member account deactivated successfully.");
+        resource.reload();
+      } else if (otpAction.type === "promote") {
+        await membersManagementApi.updateStatus(otpAction.member.id, "active");
+        setNotice("Member promoted to active successfully.");
+        resource.reload();
+      }
+      setOtpAction(null);
+    } catch (error) {
+      setActionError(error);
+    } finally {
+      setOtpAction(null);
+      setActionBusy(null);
+    }
+  };
+
   return (
     <>
       <PageHeader
@@ -831,6 +906,14 @@ export default function MembersPage() {
             <AppButton type="submit" variant="outline" size="sm">
               Apply
             </AppButton>
+            <AppButton variant="primary" onClick={handlePromoteSelected} disabled={selectedIds.size === 0 || actionBusy}>
+              <ArrowUpIcon className="h-3.5 w-3.5 me-2" />
+              Promote selected
+            </AppButton>
+            <AppButton variant="primary" onClick={handlePromoteAllActive} disabled={actionBusy}>
+              <ArrowUpIcon className="h-3.5 w-3.5 me-2" />
+              Promote all active
+            </AppButton>
           </div>
         </form>
 
@@ -850,6 +933,22 @@ export default function MembersPage() {
               <table className="lab-table lab-table--members">
                 <thead>
                   <tr>
+                    <th>
+                      <label className="lab-table-selector">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.size === members.length && members.length > 0}
+                          onChange={() => {
+                            if (selectedIds.size === members.length && members.length > 0) {
+                              setSelectedIds(new Set());
+                            } else {
+                              setSelectedIds(new Set(members.map((m) => m.id)));
+                            }
+                          }}
+                        />
+                        <span className="lab-checkbox-icon" aria-hidden="true" />
+                      </label>
+                    </th>
                     <th>Member</th>
                     <th>Academic</th>
                     <th>Status</th>
@@ -863,6 +962,20 @@ export default function MembersPage() {
                     <tr key={member.id}>
                       <td>
                         <div className="lab-member-cell">
+                          <label className="lab-table-selector">
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(member.id)}
+                              onChange={() => {
+                                if (selectedIds.has(member.id)) {
+                                  setSelectedIds(new Set([...selectedIds].filter((id) => id !== member.id)));
+                                } else {
+                                  setSelectedIds(new Set([...selectedIds, member.id]));
+                                }
+                              }}
+                            />
+                            <span className="lab-checkbox-icon" aria-hidden="true" />
+                          </label>
                           <Avatar name={member.name} size="sm" />
                           <div>
                             <strong>{member.name}</strong>
