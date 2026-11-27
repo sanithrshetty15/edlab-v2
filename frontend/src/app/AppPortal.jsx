@@ -80,10 +80,10 @@ function routeContent(pathname, isAdmin, navigate) {
       return <SettingsPage />;
     case "/app/members":
       return isAdmin ? <MembersPage /> : <AccessDenied />;
-case "/app/attendance":
+    case "/app/attendance":
       return isAdmin ? <AttendancePage /> : <AccessDenied />;
     case "/app/live-attendance":
-      if (auth.isAdmin) navigate("/app/attendance", { replace: true });
+      if (isAdmin) navigate("/app/attendance", { replace: true });
       return <AccessDenied />;
     case "/app/tasks":
       return isAdmin ? <TasksPage /> : <AccessDenied />;

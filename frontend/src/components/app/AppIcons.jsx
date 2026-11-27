@@ -261,6 +261,15 @@ export function MailIcon(props) {
   );
 }
 
+export function ArrowUpIcon(props) {
+  return (
+    <Icon {...props}>
+      <path d="M12 20V4" />
+      <path d="m6 10 6-6 6 6" />
+    </Icon>
+  );
+}
+
 export function ArrowRightIcon(props) {
   return (
     <Icon {...props}>

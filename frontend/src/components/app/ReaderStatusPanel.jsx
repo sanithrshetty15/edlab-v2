@@ -6,6 +6,7 @@ import {
   Spinner,
   EmptyState,
 } from "./Ui";
+import { ShieldIcon } from "./AppIcons";
 import { ThreeDotLoader } from "./ThreeDotLoader";
 import { formatRelative } from "../../utils/format";
 

@@ -8,6 +8,7 @@
     "build": "vite build",
     "postbuild": "node scripts/inject-sw-precache.mjs",
     "lint": "eslint .",
+    "lint:undef": "node scripts/lint-undef.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

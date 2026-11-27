@@ -24,5 +24,20 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      'no-undef': 'error',
+    },
+  },
+  {
+    files: ['scripts/**/*.{js,mjs}'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
+  {
+    files: ['verify-*.mjs'],
+    languageOptions: {
+      globals: { ...globals.node, ...globals.browser },
+    },
   },
 ])

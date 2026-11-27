@@ -24,6 +24,7 @@ import {
 } from "../../../components/app/Ui";
 import {
   EditIcon,
+  ArrowUpIcon,
   ExternalIcon,
   KeyIcon,
   MailIcon,
