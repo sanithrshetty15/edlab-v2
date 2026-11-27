@@ -596,7 +596,7 @@ export default function AttendancePage() {
 
         <div className="lab-list-panel__body">
           {tab === "records" ? (
-            {recordsResource.loading ? (
+            <>{recordsResource.loading ? (
               <LoadingState rows={8} />
             ) : recordsResource.error ? (
               <ErrorState error={recordsResource.error} onRetry={recordsResource.reload} title="Attendance records are unavailable" />
@@ -644,7 +644,7 @@ export default function AttendancePage() {
                         <td>
                           {record.exit_time
                             ? formatClockTime(record.exit_time)
-                            : <Badge tone="accent" dot>Open}</Badge>
+                              : <Badge tone="accent" dot>Open</Badge>}
                         </td>
                         <td><Badge tone="neutral">{titleCase(record.source)}</Badge></td>
                         <td>{record.created_by || "Biometric sync"}</td>
@@ -660,7 +660,7 @@ export default function AttendancePage() {
                   </tbody>
                 </table>
               </div>
-            )}
+            )}</>
           ) : tab === "live" ? (
             <Panel title="Live feed" subtitle="Fingerprint scans appear here as the attendance terminal submits them.">
               {liveLoading ? (

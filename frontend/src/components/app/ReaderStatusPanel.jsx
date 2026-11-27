@@ -5,7 +5,7 @@ import {
   Badge,
   Spinner,
   EmptyState,
-} from "../../../components/app/Ui";
+} from "./Ui";
 import { ThreeDotLoader } from "./ThreeDotLoader";
 import { formatRelative } from "../../utils/format";
 
